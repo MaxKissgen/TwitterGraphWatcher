@@ -1,9 +1,8 @@
 ### OWN STUFF ###
 *parl_data.txt
-*.csv
-*.json
-/bootstrap5
-/DB/*
+./*.csv
+./*.json
+bootstrap5
 
 
 ###STUFF FROM TEMPLATES###
