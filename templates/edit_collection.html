@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        {% block head %}
+        <!-- Required meta tags -->
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+        {% block styles %}
+            <!-- Bootstrap CSS -->
+            {{ bootstrap.load_css() }}
+        {% endblock %}
+
+        <title>Twitter Watcher</title>
+        {% endblock %}
+    </head>
+    <body>
+        {% from 'bootstrap5/utils.html' import render_messages %}
+        {% from 'bootstrap5/form.html' import render_form, render_field, render_form_row %}
+        {% from 'bootstrap5/nav.html' import render_nav_item, render_breadcrumb_item %}
+
+        <!--<p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Stop Collection</p>
+        {{ render_field(button_form.stop_field) }}
+        <div style="height:20px"></div>-->
+
+        {{ render_messages(dismissible=True) }}
+
+        <form role="form" method="POST" action="/" enctype="multipart/form-data" novalidate>
+            {{ button_form.csrf_token }}
+            <nav class="navbar navbar-expand-lg navbar-light" style="background-color: #435D9A;">
+                <div style="width: 30px"></div> <!-- Logo Placeholder -->
+                <div style="margin-top: 12px">
+                    <p class="row" style="margin-bottom: 0"><b>People:</b></p>
+                    <p class="row" ><b>Steps:</b></p>
+                </div>
+                <div style="margin: 0 10px 0 10px; padding: 0 10px 0 10px; width: 40%">
+                    <div class="row progress" style="width: 100%">
+                      <div id="collection-progress-bar-people" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                    <div class="row progress" style="margin-top: 8px; width: 100%">
+                      <div id="collection-progress-bar-time" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
+                    </div>
+                </div>
+                <div style="width: 10px"></div>
+                <div class="navbar-nav mr-auto">
+                    {{ render_field(button_form.pause_field, button_style="warning", button_size="lg") }}
+                    <div style="width: 10px"></div>
+                    {{ render_field(button_form.stop_field, button_style="danger", button_size="lg") }}
+                </div>
+            </nav>
+
+            <div style="margin: 10px 50px 10px 30px; ">
+                <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Edit People</p>
+                <div style="margin-left: 10px">
+                    <p style="font-size: 18px; color: #4f8ab5">Change your collected people via CSV files here. For each person a row should look like: <em>Name,WikidataID,TwitterHandle</em></p>
+                    {{ render_form_row([button_form.add_people_field, button_form.add_people_separator_field]) }}
+                    {{ render_form_row([button_form.remove_people_field, button_form.remove_people_separator_field]) }}
+                </div>
+                <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Edit Tweet Filters</p>
+                <div style="margin-left: 10px">
+                    <p style="font-size: 18px; color: #4f8ab5">Specify some (comma-separated) filters to add to/remove from the existing ones. Hashtags must begin with <em>#</em>, mentions with <em>@</em></p>
+                    {{ render_form_row([button_form.add_words_field,button_form.remove_words_field]) }}
+                    {{ render_form_row([button_form.add_emojis_field,button_form.remove_emojis_field]) }}
+                    {{ render_form_row([button_form.add_hashtags_field,button_form.remove_hashtags_field]) }}
+                    {{ render_form_row([button_form.add_mentions_field,button_form.remove_mentions_field]) }}
+                </div>
+
+                <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A">Bot Detection & Sentiment Analysis</p>
+                <div style="margin-left: 10px">
+                    <p style="font-size: 18px; color: #4f8ab5">Turn on/off bot detection and sentiment analysis</p>
+                    {{ render_field(button_form.bot_detection_field) }}
+                    {{ render_field(button_form.sentiment_analysis_field) }}
+                </div>
+
+                <div style="height:20"></div>
+                {{ render_field(button_form.submit_field) }}
+            </div>
+        </form>
+
+        <script>
+                let fetchTimeout;
+
+                async function getProgress() {
+                  let progress;
+
+                  let progressBar1ID = "collection-progress-bar-people"
+                  let progressBar2ID = "collection-progress-bar-time"
+
+                  try {
+                    const res = await fetch("/progress");
+                    progress = JSON.parse(await res.text());
+                  } catch (e) {
+                    console.error("Error: ", e);
+                  }
+
+                  let progressBar1 = document.getElementById(progressBar1ID)
+                  let progressBar2 = document.getElementById(progressBar2ID)
+                  progressBar1.setAttribute("aria-valuenow", progress["people_percentage"]);
+                  progressBar1.style["width"] = progress["people_percentage"] + "%";
+                  progressBar1.innerHTML = progress["people_percentage"] + "% of people collected"
+                  progressBar2.setAttribute("aria-valuenow", progress["steps_percentage"]);
+                  progressBar2.style["width"] = progress["steps_percentage"] + "%";
+                  if(progress["step_kind"] === "NO_STEPS") {
+                    progressBar2.innerHTML = "No Timesteps Used";
+                  } else {
+                    progressBar2.innerHTML = progress["steps_percentage"] + "% of "+ progress["step_kind"].toLowerCase() +" collected";
+                  }
+
+                  if (progress["steps_percentage"] == 100 && progress["people_percentage"] == 100){
+                    document.getElementById(progressBar1).innerHTML += " Done.";
+                    document.getElementById(progressBar2).innerHTML += " Done.";
+                    clearTimeout(timeout);
+                    return false;
+                  }
+
+                  timeout = setTimeout(getProgress, 25000);
+                }
+
+                document.addEventListener('DOMContentLoaded', function() {
+                   getProgress();
+                });
+        </script>
+    </body>
+</html>

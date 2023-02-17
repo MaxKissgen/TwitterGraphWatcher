@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        {% block head %}
+        <!-- Required meta tags -->
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+        {% block styles %}
+            <!-- Bootstrap CSS -->
+            {{ bootstrap.load_css() }}
+        {% endblock %}
+
+        <title>Twitter Watcher</title>
+        {% endblock %}
+    </head>
+    <body>
+        {% from 'bootstrap5/utils.html' import render_messages %}
+        {% from 'bootstrap5/form.html' import render_form, render_field, render_form_row %}
+        {% from 'bootstrap5/nav.html' import render_nav_item, render_breadcrumb_item %}
+
+        {{ render_messages(dismissible=True) }}
+
+        <form role="form" method="POST" action="/" enctype="multipart/form-data" novalidate>
+                {{ button_form.csrf_token }}
+
+            <nav class="navbar navbar-expand-lg navbar-light" style="background-color: #435D9A;">
+                <div style="width: 30px"></div> <!-- Logo Placeholder -->
+                <div class="navbar-nav mr-auto">
+                    {{ render_field(button_form.start_field, button_style="success", button_size="lg") }}
+                    <div style="width: 10px"></div>
+                    {{ render_field(button_form.start_savepoint_field, button_style="success", button_size="lg") }}
+                </div>
+            </nav>
+
+            <div style="margin: 10px 50px 10px 30px; ">
+            <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">People CSV</p>
+            <div style="margin-left: 10px">
+                <p style="font-size: 18px; color: #4f8ab5">Upload your people in a comma-separated value format here (Must be UTF-8 encoded). For each person a row should look like: <em>Name,WikidataID,TwitterHandle</em></p>
+                {{ render_form_row([button_form.people_field, button_form.people_separator_field]) }}
+            </div>
+            <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Tweet Filters</p>
+            <div style="margin-left: 10px">
+                <p style="font-size: 18px; color: #4f8ab5">Add some (comma-separated) filters to constrain the searched-for tweets. Hashtags must begin with <em>#</em>, mentions with <em>@</em></p>
+                {{ render_field(button_form.filter_words_field) }}
+                {{ render_field(button_form.filter_emojis_field) }}
+                {{ render_field(button_form.filter_hashtags_field) }}
+                {{ render_field(button_form.filter_mentions_field) }}
+            </div>
+
+            <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A">Collection Timeframe</p>
+            <div style="margin-left: 10px">
+                <p style="font-size: 18px; color: #4f8ab5">Specify the date to start collection from and the date to end collection at. You can also specify whether you want to collect all data in bulk or whether it should be done via time steps. If you don't want collection to end on a specified date, tick the box (time steps are then <emph>required</emph>)</p>
+                {{ render_field(button_form.no_end_date_field) }}
+                <script>
+                    function end_date_switching(end_date_switch) {
+                      if (end_date_switch.checked) {
+                        document.getElementById("end_date_field_cell").style.visibility = "hidden";
+                      } else {
+                        document.getElementById("end_date_field_cell").style.visibility = "visible";
+                      }
+                    }
+                </script>
+                <!-- Need to create row manually here to be able to hide both label and input of end_date_field-->
+                <div class="row">
+                    <div class="col-md-2">
+                        <div class="col-mb-3">
+                            {{ render_field(button_form.start_date_field) }}
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="col-mb-3" id="end_date_field_cell">
+                            {{ render_field(button_form.end_date_field) }}
+                        </div>
+                    </div>
+                    <div class="col-md-2">
+                        <div class="col-mb-3">
+                            {{ render_field(button_form.steps_field) }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A">Bot Detection & Sentiment Analysis</p>
+            <div style="margin-left: 10px">
+                <p style="font-size: 18px; color: #4f8ab5">Decide whether you want to gather average bot response for tweets, i.e. an average of bot likelihood and maliciousness for the first 100 responders (reply/quote tweet/retweet) of the tweet. The analysis is done via the <a href="https://milki-psy.dbis.rwth-aachen.de/bot-detector/">bot-detector</a> web application. Due to making individual requests, this may increase collection time so use this at your own discretion</p>
+                {{ render_field(button_form.bot_detection_field) }}
+                <p style="font-size: 18px; color: #4f8ab5">Decide whether you want to gather the sentiment of a tweet, i.e. whether it is meant positively or negatively with -1 being most negative and 1 most positive. Sentiment analysis is done via the <a href="https://github.com/cjhutto/vaderSentiment">VADER</a> library, but the tweets need to be translated to be analyzed. For this we use TODO and due to rate limitations this can also increase collection time</p>
+                {{ render_field(button_form.sentiment_analysis_field) }}
+            </div>
+
+            <div style="height:20"></div>
+            {{ render_field(button_form.submit_field) }}
+           <!-- <div style="height:20px"></div>
+            {{ render_field(button_form.start_field, button_style="success") }}-->
+            </div>
+        </form>
+    </body>
+</html>
