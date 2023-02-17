@@ -3,6 +3,7 @@
 *.csv
 *.json
 /bootstrap5
+/DB/*
 
 
 ###STUFF FROM TEMPLATES###
