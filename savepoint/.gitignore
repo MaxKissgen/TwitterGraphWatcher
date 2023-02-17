@@ -1,0 +1,3 @@
+#Be able to add the empty savepoint folder but not its contents
+*
+!.gitignore
