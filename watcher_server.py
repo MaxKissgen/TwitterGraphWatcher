@@ -14,7 +14,6 @@ from flask import render_template
 
 from datetime import datetime
 import pandas as pd
-import io
 
 import twitter_watcher
 import config
@@ -24,7 +23,7 @@ app = Flask(__name__)
 app.secret_key = 'uahrgp98q3ztU9uwgp9JSg0upghEaOJ'
 bootstrap = Bootstrap5(app)
 
-app.config['BOOTSTRAP_BTN_STYLE'] = 'primary'  # default to 'secondary'
+app.config['BOOTSTRAP_BTN_STYLE'] = 'primary'
 
 collection_paused = False
 x = None
@@ -318,23 +317,3 @@ def progress():
 
     return '{"people_percentage":' + str(int(people_fetched)) + ',"step_kind":"' + config.Timesteps(config.time_step_size).name \
            + '","steps_percentage":' + str(int(steps_fetched)) + '}'
-
-# bind multiple URL for one view function
-@app.route('/hi')
-@app.route('/hello')
-def say_hello():
-    return '<h1>Hello, Flask!</h1>'
-
-
-# dynamic route, URL variable default
-@app.route('/greet', defaults={'name': 'Programmer'})
-@app.route('/greet/<name>')
-def greet(name):
-    return '<h1>Hello, %s!</h1>' % name
-
-
-# custom flask cli command
-#@app.cli.command()
-#def hello():
-#    """Just say hello."""
-#    click.echo('Hello, Human!')

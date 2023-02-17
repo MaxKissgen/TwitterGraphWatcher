@@ -1228,10 +1228,12 @@ def delete_savepoint():
     savepoint.pagination_token = None
 
 
-# TODO: Incorporate collection periods
+def stop_collection_process():
+    config.stop_collection = True
+    exit_sleep.set()
+
+
 # TODO: Remove spaces for wikidata object keys?
-# TODO: Also add option to stop collection while updating collection parameters (e.g. queries/people)?
-# TODO: Check that input makes sense and that handles and ids correspond to their format, e.g. no spaces in a handle/id
 def collection(use_savepoint=False):
     global people, queries, current_person, collecting_people, current_start_date, current_end_date,\
            savepoint
