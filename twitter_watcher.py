@@ -16,6 +16,8 @@ import socket
 from pyArango.connection import *
 import pyArango.theExceptions as pyArangoExceptions
 import tweepy
+from requests import ReadTimeout
+from urllib3.exceptions import ReadTimeoutError
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 import config
@@ -88,10 +90,10 @@ def build_queries(filter_emojis=[], filter_keywords=[], filter_hashtags=[], filt
     i = 0
 
     # If we don't use any filters at all
-    if (len(filter_emojis) == 0 or (len(filter_emojis) == 1 and filter_emojis[1] == 0))\
-            and (len(filter_keywords) == 0 or (len(filter_keywords) == 1 and filter_keywords[1] == 0)) \
-            and (len(filter_hashtags) == 0 or (len(filter_hashtags) == 1 and filter_hashtags[1] == 0)) \
-            and (len(filter_handles) == 0 or (len(filter_emojis) == 1 and filter_handles[1] == 0)):
+    if (len(filter_emojis) == 0 or (len(filter_emojis) == 1 and filter_emojis[0] == 0))\
+            and (len(filter_keywords) == 0 or (len(filter_keywords) == 1 and filter_keywords[0] == 0)) \
+            and (len(filter_hashtags) == 0 or (len(filter_hashtags) == 1 and filter_hashtags[0] == 0)) \
+            and (len(filter_handles) == 0 or (len(filter_emojis) == 1 and filter_handles[0] == 0)):
         return built_queries
 
     #TODO: Check emoji and word syntax, try to understand how to check for non-english letters etc
@@ -173,7 +175,7 @@ def setup_database():
         print("Database was not running. Starting it...")
         global db_process
         #TODO: REMOVE CUSTOM DIRECTORY
-        db_process = subprocess.Popen([arango_filepath, "--database.directory", "TestDBFiles", "--server.endpoint", db_config['database_connection_type'] + "+tcp://" + db_config['database_address'] + ":" + db_config['database_port']])
+        db_process = subprocess.Popen([arango_filepath, "--database.directory", "TestDBFiles", "--http.trusted-origin", "*", "--server.endpoint", db_config['database_connection_type'] + "+tcp://" + db_config['database_address'] + ":" + db_config['database_port']])
 
     db_running = False
     while not db_running:  # Wait for the db to start
@@ -813,6 +815,10 @@ def get_bot_response(user_list):
                 doc.save()
 
                 request_successful = True
+            except ReadTimeout:
+                print("Bot detector timeout likely cause of rate limit, waiting")
+                #TODO Test this
+                sleep_interruptible(15*60)
             except ConnectionError as connection_ex:
                 print(connection_ex)
                 #TODO Test this
@@ -823,8 +829,12 @@ def get_bot_response(user_list):
                 #TODO Test this
                 sleep_interruptible(15*60)
 
+            if config.stop_collection:
+                break
+
         if config.stop_collection:
             break
+
 
     avg_botness = avg_botness/len(user_list) if len(user_list) != 0 else 0
     avg_maliciousness = avg_maliciousness/len(user_list) if len(user_list) != 0 else 0
@@ -1142,8 +1152,8 @@ def load_savepoint():
 
         config.end_date = datetime.strptime(savepoint_json["end_date"], '%Y-%m-%d %H:%M:%S') if savepoint_json["end_date"] is not None else None
         config.time_step_size = config.Timesteps(int(savepoint_json["time_step_size"]))
-        config.do_sentiment_analysis = bool(savepoint_json["do_sentiment_analysis"])
-        config.do_bot_detection = bool(savepoint_json["do_bot_detection"])
+        config.do_sentiment_analysis = savepoint_json["do_sentiment_analysis"]
+        config.do_bot_detection = savepoint_json["do_bot_detection"]
         queries = savepoint_json["queries"]
         if savepoint_json["added_filters"] is not None:
             config.added_filters = dict(savepoint_json["added_filters"])
@@ -1190,8 +1200,8 @@ def store_savepoint():
                           + ",\n")
         # Additionally save the queries we use and whether we do bot detection or sentiment analysis
         savepoint_str += ('"queries": ' + json.dumps(queries) + ",\n") #if queries is not None else "null"
-        savepoint_str += ('"do_bot_detection": ' + '"' + str(config.do_bot_detection) + '"' + ",\n")
-        savepoint_str += ('"do_sentiment_analysis": ' + '"' + str(config.do_sentiment_analysis) + '"' + ",\n")
+        savepoint_str += ('"do_bot_detection": ' + json.dumps(config.do_bot_detection) + ",\n")
+        savepoint_str += ('"do_sentiment_analysis": ' + json.dumps(config.do_sentiment_analysis) + ",\n")
         # Save filter keywords if their adding process was not yet completed
         savepoint_str += '"added_filters": ' + (json.dumps(config.added_filters) if config.added_filters is not None else "null") + "\n"
         savepoint_str += "}"
@@ -1357,7 +1367,7 @@ def collection(use_savepoint=False):
         # If the collection end date lies in the future (and thus many tweets have not been written yet), wait until another timestep can be made
         if current_end_date.date() >= datetime.now().date():
             time_diff = current_end_date-datetime.now()
-            sleep_interruptible(time_diff.seconds)
+            sleep_interruptible(time_diff.seconds + 1000)  # wait some extra seconds to not land in this condition again
             if config.stop_collection:
                 savepoint.current_start_date = current_start_date
                 store_savepoint()
@@ -1457,7 +1467,9 @@ def collection(use_savepoint=False):
         # Increment time frame by one step
         if config.time_step_size != config.Timesteps.NO_STEPS:
             current_start_date = current_end_date
-            current_end_date = incr_date_by_timestep(current_end_date)
+            current_end_date = incr_date_by_timestep(current_end_date, config.time_step_size)
+            if current_end_date.date() > datetime.today().date():
+                current_end_date = datetime.today()
 
         # Stop collection when we reach the end date, if it exists
         if config.end_date is not None and current_start_date.date() >= current_end_date.date():
