@@ -4,6 +4,7 @@ import threading
 import time
 
 import requests
+import tweepy
 from flask import Flask, flash, redirect, url_for
 from wtforms.validators import DataRequired, Length, Regexp, InputRequired
 from wtforms.fields import StringField, DateField, SubmitField, SelectField
@@ -30,16 +31,21 @@ x = None
 
 
 class StartCollectionParametersForm(FlaskForm):
+    token_switch_field = SwitchField("Use bearer token from file", render_kw={"id": "token-switch-field", "onchange": "token_switching(this)"},
+                                    false_values=[False,'false','False'], default=True)
+    token_field = StringField('Bearer Token for the Twitter API')
+
+    people_field = FileField('People CSV', validators=[InputRequired()])#, Regexp('.+\.csv$')])
+    people_separator_field = StringField('Separator used', validators=[Regexp('^.{1}$')], default=",")
+
     filter_words_field = StringField('Filter Keywords', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     filter_emojis_field = StringField('Filter Emojis', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     filter_hashtags_field = StringField('Filter Hashtags', validators=[Regexp('^(((#[^@#,]+),)*#[^@#,]+){0,1}$')])
     filter_mentions_field = StringField('Filter Mentions', validators=[Regexp('^(((@[^@#,]+),)*@[^@#,]+){0,1}$')])
-    people_field = FileField('People CSV', validators=[InputRequired()])#, Regexp('.+\.csv$')])
-    people_separator_field = StringField('Separator used', validators=[Regexp('^.{1}$')], default=",")
 
     start_date_field = DateField(format=["%Y-%m-%d"])
     end_date_field = DateField(format=["%Y-%m-%d"])
-    no_end_date_field = SwitchField("No end-date", render_kw={"onchange": "end_date_switching(this)"},
+    no_end_date_field = SwitchField("No end-date", render_kw={"id": "end-date-switch-field", "onchange": "end_date_switching(this)"},
                                     false_values=[False,'false','False'])
     steps_field = SelectField('Collection Steps',
                               choices=[(0, 'No Time Steps'), (1, 'Month-Wise Collection'),
@@ -97,13 +103,37 @@ def read_file_data(file_data, sep):
     return data
 
 
+def set_bearer_token(get_from_file=True, value=""):
+    if get_from_file:
+        # Check if bearer token file exists
+        try:
+            if not os.path.isfile("./bearer_token.txt"):
+                with open('bearer_token.txt', 'r', encoding="utf-8") as file:
+                    config.bearer = file.read()
+        except Exception:
+            raise FileNotFoundError("Could not read/find bearer token file")
+    else:
+        if value == "":
+            raise Exception("Got empty bearer token")
+        config.bearer = value
+
+    #Try to verify if bearer token is valid
+    t_client = tweepy.Client(bearer_token=config.bearer, return_type=tweepy.Response, wait_on_rate_limit=False)
+    try:
+        t_client.get_user(username="TwitterDev")
+    except tweepy.errors.TooManyRequests:
+        flash("Could not verify bearer token, rate limit was hit. Either wait 15 minutes or start collection anyways but the token may not work")
+    except tweepy.errors.TwitterServerError:
+        flash("Could not verify bearer token, rate limit was hit. Either wait 15 minutes or start collection anyways but the token may not work")
+
+
 # TODO: Make alert dismissing work correctly
 # TODO: Maybe display at which step the collection is currently at via string
 @app.route('/', methods=('GET', 'POST'))
 @app.route('/TwitterWatcher', methods=('GET', 'POST'))
 def index():
     global collection_paused, x
-    config.collection_running = True  # TODO: Remove
+    #config.collection_running = True  # TODO: Remove
 
     if not config.collection_running and not collection_paused:
         button_form = StartCollectionParametersForm()#start_date_field=datetime.datetime.today().date(), end_date_field=datetime.datetime.today().date())
@@ -121,7 +151,6 @@ def index():
         print("HELlOOOOOOOOOOOOOOOO")
 
         if button_form.is_submitted():
-        #if button_form.validate_on_submit():
             if button_form.start_field.data:
                 print("STARTING COLLECTION")
                 button_form.start_field.render_kw = {'disabled': 'disabled'}
@@ -137,6 +166,18 @@ def index():
                 if not (os.path.isfile("./savepoint/savepoint.json") and os.path.isfile("./savepoint/people.csv")):
                     flash("Error: Cant load from savepoint cause it doesn't exist", "error")
                 print("STARTING COLLECTION")
+
+                try:
+                    set_bearer_token(button_form.token_switch_field.data, button_form.token_field.data)
+                except Exception as e:
+                    button_form.submit_field.render_kw = {}
+                    button_form.start_field.render_kw = {'disabled': 'disabled'}
+                    flash("Error: '" + str(e) + "'", "error")
+                    return render_template(
+                        'start_collection.html',
+                        button_form=button_form
+                    )
+
                 button_form.start_field.render_kw = {'disabled': 'disabled'}
                 button_form.start_savepoint_field.render_kw = {'disabled': 'disabled'}
                 if not config.collection_running:
@@ -150,20 +191,31 @@ def index():
                 print("SETTING PARAMETERS")
                 if button_form.submit_field.data:
                     button_form.submit_field.render_kw = {'disabled': 'disabled'}
+
+                    try:
+                        set_bearer_token(button_form.token_switch_field.data, button_form.token_field.data)
+                    except Exception as e:
+                        button_form.submit_field.render_kw = {}
+                        button_form.start_field.render_kw = {'disabled': 'disabled'}
+                        flash("Error: '" + str(e) + "'", "error")
+                        return render_template(
+                            'start_collection.html',
+                            button_form=button_form
+                        )
+
                     config.tweetWords = button_form.filter_words_field.data.split(",")
                     config.tweetEmojis = button_form.filter_emojis_field.data.split(",")
                     config.tweetHashtags = button_form.filter_hashtags_field.data.split(",")
                     config.tweetHandles = button_form.filter_mentions_field.data.split(",")
 
                     try:
-                        #print(button_form.people_field.data)
                         config.people = read_file_data(button_form.people_field.data, button_form.people_separator_field.data)
 
                         twitter_watcher.check_input(config.people)
                     except Exception as e:
                         button_form.submit_field.render_kw = {}
                         button_form.start_field.render_kw = {'disabled': 'disabled'}
-                        flash("Error while reading file:    '" + str(e) + "'")
+                        flash("Error while reading file:    '" + str(e) + "'", "error")
                         return render_template(
                             'start_collection.html',
                             button_form=button_form
@@ -174,19 +226,21 @@ def index():
                         config.end_date = datetime.strptime(button_form.end_date_field.data.strftime('%m-%d-%y'),'%m-%d-%y')
 
 
+                    print("END_DATE STEPS:", button_form.steps_field.data)
                     start_date = datetime.strptime(button_form.start_date_field.data.strftime('%m-%d-%y'),'%m-%d-%y')
                     end_date = datetime.strptime(button_form.end_date_field.data.strftime('%m-%d-%y'),'%m-%d-%y')
                     if (button_form.no_end_date_field.data or end_date.date() > datetime.today().date()) \
-                            and button_form.steps_field.data == 0:
+                            and config.Timesteps(button_form.steps_field.data) == config.Timesteps.NO_STEPS:
                         flash(
                             "Error: Time steps are needed when there is no end date or the end date lies in the future",
                             "error")
                         button_form.submit_field.render_kw = {}
+                        button_form.start_field.render_kw = {"disabled" : "disabled"}
                         return render_template(
                             'start_collection.html',
                             button_form=button_form
                         )
-                    elif start_date.date() >= end_date.date():
+                    elif (not button_form.no_end_date_field.data) and start_date.date() >= end_date.date():
                         flash(
                             "Error: End date must be after start date",
                             "error")

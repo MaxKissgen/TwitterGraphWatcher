@@ -34,6 +34,14 @@
             </nav>
 
             <div style="margin: 10px 50px 10px 30px; ">
+            <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Twitter API Token</p>
+            <div style="margin-left: 10px">
+                <p style="font-size: 18px; color: #4f8ab5">Read your API token from the file <em>bearer_token.txt</em> in the Watchers folder or insert your API token here to be able to start collection</p>
+                {{ render_field(button_form.token_switch_field) }}
+                <div class="col-mb-3" id="token_field_cell">
+                    {{ render_field(button_form.token_field) }}
+                </div>
+            </div>
             <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">People CSV</p>
             <div style="margin-left: 10px">
                 <p style="font-size: 18px; color: #4f8ab5">Upload your people in a comma-separated value format here (Must be UTF-8 encoded). For each person a row should look like: <em>Name,WikidataID,TwitterHandle</em></p>
@@ -52,15 +60,6 @@
             <div style="margin-left: 10px">
                 <p style="font-size: 18px; color: #4f8ab5">Specify the date to start collection from and the date to end collection at. You can also specify whether you want to collect all data in bulk or whether it should be done via time steps. If you don't want collection to end on a specified date, tick the box (time steps are then <emph>required</emph>)</p>
                 {{ render_field(button_form.no_end_date_field) }}
-                <script>
-                    function end_date_switching(end_date_switch) {
-                      if (end_date_switch.checked) {
-                        document.getElementById("end_date_field_cell").style.visibility = "hidden";
-                      } else {
-                        document.getElementById("end_date_field_cell").style.visibility = "visible";
-                      }
-                    }
-                </script>
                 <!-- Need to create row manually here to be able to hide both label and input of end_date_field-->
                 <div class="row">
                     <div class="col-md-2">
@@ -94,6 +93,27 @@
            <!-- <div style="height:20px"></div>
             {{ render_field(button_form.start_field, button_style="success") }}-->
             </div>
+            <script>
+                function token_switching(token_switch) {
+                  if (token_switch.checked) {
+                    document.getElementById("token_field_cell").style.visibility = "hidden";
+                  } else {
+                    document.getElementById("token_field_cell").style.visibility = "visible";
+                  }
+                }
+                function end_date_switching(end_date_switch) {
+                  if (end_date_switch.checked) {
+                    document.getElementById("end_date_field_cell").style.visibility = "hidden";
+                  } else {
+                    document.getElementById("end_date_field_cell").style.visibility = "visible";
+                  }
+                }
+
+                document.addEventListener('DOMContentLoaded', function() {
+                    token_switching(document.getElementById("token-switch-field"))
+                    end_date_switching(document.getElementById("end-date-switch-field"))
+                });
+            </script>
         </form>
     </body>
 </html>
