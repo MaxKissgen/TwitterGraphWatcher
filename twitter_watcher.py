@@ -133,6 +133,8 @@ def build_queries(filter_emojis=[], filter_keywords=[], filter_hashtags=[], filt
         else:
             queries_done = True
 
+    if built_queries[0] == "()":
+        built_queries[0] = ""
     return built_queries
 
 
