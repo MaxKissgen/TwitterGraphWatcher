@@ -29,6 +29,7 @@ catch_up_date = datetime(2022, 10, 16)
 db_connection = None
 db_process = None
 
+current_person_people_collection = None
 current_person = None
 collecting_people = False
 current_start_date = None
@@ -58,6 +59,10 @@ def sleep_interruptible(time_in_secs):
     print("Rate limit hit, sleeping " + str(time_in_secs) + " seconds")
     while not exit_sleep.is_set():
         exit_sleep.wait(time_in_secs)
+        # Set() to exit the loop. Theoretically this should not be necessary:
+        # The wait method should theoretically call set() after the timeout in seconds. But it does not, so here we are.
+        exit_sleep.set()
+        print("DONE WAITING")
     exit_sleep.clear()
 
 
@@ -275,6 +280,9 @@ def collect_ids_from_wikidata_claims(claims):
                     else:
                         print("Wikidata id translation request not successful: " + str(response))
                         return ids_to_be_translated
+
+                    if config.stop_collection:
+                        return None
                 # print(response.content)
 
                 content_json = json.loads(response.content)
@@ -312,6 +320,9 @@ def collect_person_from_wikidata(label=None, wikidata_id=None):
                 claims.pop(key)
 
         translated_wikidata_ids = collect_ids_from_wikidata_claims(claims)
+
+        if translated_wikidata_ids is None and config.stop_collection:
+            return None
 
         #print(translated_wikidata_ids)
 
@@ -406,6 +417,9 @@ def collect_twitter_user(t_handle, t_client):
         except tweepy.errors.TwitterServerError as t_servErr:
             print("Twitter unavailable: " + str(t_servErr) + ", Waiting...")
             sleep_interruptible(15 * 60)
+
+        if config.stop_collection:
+            return None
 
 
     # print(response)
@@ -623,6 +637,9 @@ def store_tweet(t_client, tweet_json, sentiment_value=None, avg_botness=None, av
                     except tweepy.errors.TwitterServerError as servErr:
                         print("Twitter unavailable: " + str(servErr) + ", Waiting...")
                         sleep_interruptible(15 * 60)
+
+                    if config.stop_collection:
+                        return
             else:
                 refed_user_id = tweet_json["in_reply_to_user_id"]
                 references.append((ref_tweet["type"], refed_user_id))
@@ -724,6 +741,10 @@ def collect_liking_users(tweet_id, t_client, page_limit=sys.maxsize):
                 print("Twitter unavailable: " + str(t_servErr) + ", Waiting...")
                 sleep_interruptible(15*60)
 
+            if config.stop_collection:
+                savepoint.like_pagination = (i, pagination_token)
+                break
+
         if config.stop_collection:
             savepoint.like_pagination = (i, pagination_token)
             break
@@ -759,8 +780,15 @@ def get_tweet_sentiment_value(tweet_json):
                         sleep_interruptible(60*60)
                         if datetime.now(timezone.utc).hour == 0:
                             next_day = True
+
+                        if config.stop_collection:
+                            return None
                 else:
                     request_successful = True
+
+                if config.stop_collection:
+                    return None
+
             tweet_text = response_json["responseData"]["translatedText"]
 
         sentiment_values = {"compound": 0}
@@ -777,6 +805,9 @@ def get_tweet_sentiment_value(tweet_json):
 
 
 def get_bot_response(user_list):
+    if user_list is None and config.stop_collection:
+        return None
+
     bot_detection_db = db_connection["TwitterWatcher"]["UserBotDetectionValues"]
 
     avg_botness = 0
@@ -832,11 +863,10 @@ def get_bot_response(user_list):
                 sleep_interruptible(15*60)
 
             if config.stop_collection:
-                break
+                return None, None
 
         if config.stop_collection:
-            break
-
+            return None, None
 
     avg_botness = avg_botness/len(user_list) if len(user_list) != 0 else 0
     avg_maliciousness = avg_maliciousness/len(user_list) if len(user_list) != 0 else 0
@@ -872,6 +902,9 @@ def get_responding_users(tweet_data, t_client):
         except tweepy.errors.TwitterServerError as servErr:
             print("Twitter unavailable: " + str(servErr) + ", Waiting...")
             sleep_interruptible(15*60)
+
+        if config.stop_collection:
+            return None
 
     users = []
     if t_response.includes.get("users") is not None:  # Sometimes there may be no responses
@@ -945,6 +978,14 @@ def collect_tweets_by_query(person, t_query, t_client, start_date, end_date, cat
                 print("Twitter unavailable: " + str(t_servErr) + ", Waiting...")
                 sleep_interruptible(15*60)
 
+            if config.stop_collection:
+                if not catch_up:
+                    savepoint.person = person
+                    savepoint.tweets_left = tweets
+                    savepoint.pagination_token = pagination_token
+                    savepoint.query = t_query
+                return
+
         if config.stop_collection:
             if not catch_up:
                 savepoint.person = person
@@ -970,19 +1011,27 @@ def collect_tweets_by_query(person, t_query, t_client, start_date, end_date, cat
             elif config.do_sentiment_analysis:
                 print("Getting sentiments")
                 sentiment_value = get_tweet_sentiment_value(tweets[index])
+                if sentiment_value is None and config.stop_collection:
+                    break
             if found_doc.get("avg_response_botness") is not None:
                 avg_botness = found_doc["avg_response_botness"]
                 avg_maliciousness = found_doc["avg_response_bot_maliciousness"]
             elif is_not_retweet(tweets[index]) and config.do_bot_detection:
                 print("Getting bots")
                 avg_botness, avg_maliciousness = get_bot_response(get_responding_users(tweets[index], t_client))
+                if avg_botness is None and config.stop_collection:
+                    break
         except pyArangoExceptions.DocumentNotFoundError:
             if config.do_sentiment_analysis:
                 print("Getting sentiments")
                 sentiment_value = get_tweet_sentiment_value(tweets[index])
+                if sentiment_value is None and config.stop_collection:
+                    break
             if is_not_retweet(tweets[index]) and config.do_bot_detection:
                 print("Getting bots")
                 avg_botness, avg_maliciousness = get_bot_response(get_responding_users(tweets[index], t_client))
+                if avg_botness is None and config.stop_collection:
+                    break
 
         tweet_liking_users = None
         if is_not_retweet(tweets[index]):  # Retweets can't be liked
@@ -1000,6 +1049,14 @@ def collect_tweets_by_query(person, t_query, t_client, start_date, end_date, cat
 
         print("Storing Tweet")
         store_tweet(t_client, tweets[index], sentiment_value, avg_botness, avg_maliciousness, tweet_liking_users)
+
+    if config.stop_collection:
+        if not catch_up:
+            savepoint.person = person
+            savepoint.tweets_left = []  # TODO: Test this
+            savepoint.pagination_token = pagination_token
+            savepoint.query = t_query
+        return
 
 
 def read_people_from_csv(people_csv):
@@ -1044,24 +1101,30 @@ def reset_index_and_update_savepoint_person():
 
 
 def collect_people(t_client, people):
+    global current_person_people_collection
+
     remove_people = []
 
     for person in people.itertuples(name=None, index=True):
-        try:
-            # try:
-            #     db_connection["TwitterWatcher"]["People"].fetchDocument(person[1])
-            # except pyArangoExceptions.DocumentNotFoundError:
-            wikidata_data = collect_person_from_wikidata(person[1], person[2])
-            twitter_data = collect_twitter_user(person[3], t_client)
-            print(person[2], person[3])
-            store_person(wikidata_data, twitter_data)
-        except FileNotFoundError as person_ex:
-            print("Person not found on " + str(person_ex) + "\n" + str(person) +"\nRemoving from list and skipping them...")
+        if current_person_people_collection is None or person[0] >= current_person_people_collection[0]:  # Continue from people collection savepoint if it exists
+            current_person_people_collection = None
+            try:
+                # try:
+                #     db_connection["TwitterWatcher"]["People"].fetchDocument(person[1])
+                # except pyArangoExceptions.DocumentNotFoundError:
+                wikidata_data = collect_person_from_wikidata(person[1], person[2])
+                twitter_data = collect_twitter_user(person[3], t_client)
 
-            remove_people.append(person[0])
+                if config.stop_collection:
+                    current_person_people_collection = person
+                    break
 
-        if config.stop_collection:
-            break
+                print(person[2], person[3])
+                store_person(wikidata_data, twitter_data)
+            except FileNotFoundError as person_ex:
+                print("Person not found on " + str(person_ex) + "\n" + str(person) +"\nRemoving from list and skipping them...")
+
+                remove_people.append(person[0])
 
     if len(remove_people) != 0:
         people.drop(index=remove_people, inplace=True)
@@ -1141,10 +1204,11 @@ def incr_date_by_timestep(date, time_step_size):
 
 
 def load_savepoint():
-    global savepoint, queries, people
+    global savepoint, queries, people, collecting_people, current_person_people_collection
 
     with open('savepoint/savepoint.json', 'r', encoding="utf-8") as file:
         savepoint_json = json.loads(file.read())
+        collecting_people = savepoint_json["current_person_people_collection"] if savepoint_json["current_person_people_collection"] is not None else None
         savepoint.person = tuple(savepoint_json["savepoint_person"]) if savepoint_json["savepoint_person"] is not None else None
         savepoint.query = savepoint_json["savepoint_query"]
         savepoint.tweets_left = savepoint_json["savepoint_tweets_left"]
@@ -1176,6 +1240,9 @@ def store_savepoint():
         file.write("")
     with open('savepoint/savepoint.json', 'a', encoding="utf-8") as file:
         savepoint_str = ("{\n")
+        savepoint_str += ('"current_person_people_collection": '
+                          + (json.dumps(current_person_people_collection) if current_person_people_collection is not None else "null")
+                          + ",\n")
         savepoint_str += ('"savepoint_person": '
                           + (json.dumps(list(savepoint.person)) if savepoint.person is not None else "null")
                           + ",\n")
@@ -1230,8 +1297,9 @@ def store_savepoint():
 
 
 def delete_savepoint():
-    global savepoint
+    global savepoint, current_person_people_collection
 
+    current_person_people_collection = None
     savepoint.person = None
     savepoint.tweets_left = None
     savepoint.current_start_date = None
@@ -1247,8 +1315,16 @@ def stop_collection_process():
 
 # TODO: Remove spaces for wikidata object keys?
 def collection(use_savepoint=False):
-    global people, queries, current_person, collecting_people, current_start_date, current_end_date,\
-           savepoint
+    global people, queries, current_person_people_collection, current_person, collecting_people, \
+           current_start_date, current_end_date, savepoint
+
+    # Check if bearer token file exists
+    try:
+        if not os.path.isfile("./bearer_token.txt"):
+            with open('bearer_token.txt', 'r', encoding="utf-8") as file:
+                config.bearer = file.read()
+    except Exception:
+        raise FileNotFoundError("Could not read/find bearer token file")
 
     setup_database()  # TODO: Start this up on website ini, not on collection ini
 
@@ -1293,8 +1369,27 @@ def collection(use_savepoint=False):
 
     end_date_reached = False
     while not end_date_reached:
+        # Update/create the people documents
+        if people_check_needed or current_person_people_collection is not None:
+            collecting_people = True
+            collect_people(t_client, people)
+            if config.stop_collection:
+                savepoint.current_start_date = current_start_date
+                store_savepoint()
+                config.collection_running = False
+                return
+            collecting_people = False
+            people_check_needed = False
+            last_people_check_time = datetime.now(timezone.utc)
+
         if config.added_people is not None:
             collect_people(t_client, config.added_people)
+            if config.stop_collection:
+                current_person_people_collection = None
+                savepoint.current_start_date = current_start_date
+                store_savepoint()
+                config.collection_running = False
+                return
 
             # Change existing people according to new data and then delete them from added people
             existing_people_indexes = []
@@ -1355,15 +1450,6 @@ def collection(use_savepoint=False):
 
             #print("SHAPE NOW: " + str(people.shape)) #TODO: Remove
             config.removed_people = None
-
-
-        # Update/create the people documents
-        if people_check_needed:
-            collecting_people = True
-            collect_people(t_client, people)
-            collecting_people = False
-            people_check_needed = False
-            last_people_check_time = datetime.now(timezone.utc)
 
 
         # If the collection end date lies in the future (and thus many tweets have not been written yet), wait until another timestep can be made

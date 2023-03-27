@@ -100,7 +100,10 @@ class EditCollectionParametersForm(FlaskForm):
 
 # TODO: Cope with excel files, too
 def read_file_data(file_data, sep):
-    data = pd.read_csv(file_data, sep=sep, names=["Name", "WikidataID", "TwitterHandle"])
+    if file_data.endswith(".xslx") or file_data.endswith(".XSLX"):
+        data = pd.read_excel(file_data, names=["Name", "WikidataID", "TwitterHandle"])
+    else:
+        data = pd.read_csv(file_data, sep=sep, names=["Name", "WikidataID", "TwitterHandle"])
 
     # Try to remove column index row if present, guessing an index row by checking cell formats
     wikidata_format = re.compile("^Q[0-9]+$")
@@ -109,18 +112,14 @@ def read_file_data(file_data, sep):
             data['TwitterHandle'].loc[data.index[0]]):
         data.drop(0, inplace=True)
 
+    data.drop_duplicates(inplace=True, ignore_index=True)
+
     return data
 
 
 def set_bearer_token(get_from_file=True, value=""):
     if get_from_file:
-        # Check if bearer token file exists
-        try:
-            if not os.path.isfile("./bearer_token.txt"):
-                with open('bearer_token.txt', 'r', encoding="utf-8") as file:
-                    config.bearer = file.read()
-        except Exception:
-            raise FileNotFoundError("Could not read/find bearer token file")
+        config.bearer_from_file = True
     else:
         if value == "":
             raise Exception("Got empty bearer token")
@@ -311,7 +310,7 @@ def index():
                     while config.collection_running:
                         time.sleep(0.2)
 
-                    return redirect('/')
+                    return redirect('/TwitterWatcher')
 
             elif button_form.validate():
                 if button_form.submit_field.data:
