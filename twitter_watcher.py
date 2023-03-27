@@ -1208,7 +1208,7 @@ def load_savepoint():
 
     with open('savepoint/savepoint.json', 'r', encoding="utf-8") as file:
         savepoint_json = json.loads(file.read())
-        collecting_people = savepoint_json["current_person_people_collection"] if savepoint_json["current_person_people_collection"] is not None else None
+        collecting_people = tuple(savepoint_json["current_person_people_collection"]) if savepoint_json["current_person_people_collection"] is not None else None
         savepoint.person = tuple(savepoint_json["savepoint_person"]) if savepoint_json["savepoint_person"] is not None else None
         savepoint.query = savepoint_json["savepoint_query"]
         savepoint.tweets_left = savepoint_json["savepoint_tweets_left"]
@@ -1241,7 +1241,7 @@ def store_savepoint():
     with open('savepoint/savepoint.json', 'a', encoding="utf-8") as file:
         savepoint_str = ("{\n")
         savepoint_str += ('"current_person_people_collection": '
-                          + (json.dumps(current_person_people_collection) if current_person_people_collection is not None else "null")
+                          + (json.dumps(list(current_person_people_collection)) if current_person_people_collection is not None else "null")
                           + ",\n")
         savepoint_str += ('"savepoint_person": '
                           + (json.dumps(list(savepoint.person)) if savepoint.person is not None else "null")
