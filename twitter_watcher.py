@@ -95,10 +95,10 @@ def build_queries(filter_emojis=[], filter_keywords=[], filter_hashtags=[], filt
     i = 0
 
     # If we don't use any filters at all
-    if (len(filter_emojis) == 0 or (len(filter_emojis) == 1 and filter_emojis[0] == 0))\
-            and (len(filter_keywords) == 0 or (len(filter_keywords) == 1 and filter_keywords[0] == 0)) \
-            and (len(filter_hashtags) == 0 or (len(filter_hashtags) == 1 and filter_hashtags[0] == 0)) \
-            and (len(filter_handles) == 0 or (len(filter_emojis) == 1 and filter_handles[0] == 0)):
+    if (len(filter_emojis) == 0 or (len(filter_emojis) == 1 and filter_emojis[0] == ""))\
+            and (len(filter_keywords) == 0 or (len(filter_keywords) == 1 and filter_keywords[0] == "")) \
+            and (len(filter_hashtags) == 0 or (len(filter_hashtags) == 1 and filter_hashtags[0] == "")) \
+            and (len(filter_handles) == 0 or (len(filter_handles) == 1 and filter_handles[0] == "")):
         return built_queries
 
     #TODO: Check emoji and word syntax, try to understand how to check for non-english letters etc

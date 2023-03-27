@@ -298,7 +298,7 @@ def index():
                         button_form.pause_field.render_kw = {"class": "btn-success", "value": "Resume Collection"}
                     else:
                         collection_paused = False
-                        x = threading.Thread(target=twitter_watcher.collection, daemon=True)
+                        x = threading.Thread(target=twitter_watcher.collection, args=(True,), daemon=True)
                         x.start()
                         button_form.pause_field.render_kw = {"class": "btn-warning", "value": "Pause Collection"}
 
@@ -453,8 +453,7 @@ def index_api():
                     time.sleep(0.2)
             else:
                 collection_paused = False
-                x = threading.Thread(target=twitter_watcher.collection,
-                                     daemon=True)  # TODO: Test regarding the file stuff here
+                x = threading.Thread(target=twitter_watcher.collection, args=(True,), daemon=True)  # TODO: Test regarding the file stuff here
                 x.start()
 
         elif request.form.get("stop_collection", default=False, type=bool):
