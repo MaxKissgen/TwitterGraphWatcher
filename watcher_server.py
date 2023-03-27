@@ -119,7 +119,7 @@ def read_file_data(file_data, sep):
 
 def set_bearer_token(get_from_file=True, value=""):
     if get_from_file:
-        config.bearer_from_file = True
+        config.using_bearer_from_file = True
     else:
         if value == "":
             raise Exception("Got empty bearer token")

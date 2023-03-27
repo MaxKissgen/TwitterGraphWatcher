@@ -15,6 +15,7 @@ start_date = datetime(2022, 2, 21)
 end_date = datetime(2023, 1, 16)
 time_step_size = Timesteps.NO_STEPS
 
+using_bearer_from_file = False
 bearer = ""  # TODO: Maybe have the User be able to put this into a file somewhere, otherwise just put the option into the server
 
 do_sentiment_analysis = False  # TODO: Set to True
@@ -35,7 +36,6 @@ db_connection = None
 db_process = None
 
 
-userHandles = ["@MAStrackZi"]
 people = pd.DataFrame()
 
 tweetEmojis = ("🇺🇦,🇷🇺").split(",")

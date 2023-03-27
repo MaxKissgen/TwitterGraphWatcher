@@ -1318,13 +1318,14 @@ def collection(use_savepoint=False):
     global people, queries, current_person_people_collection, current_person, collecting_people, \
            current_start_date, current_end_date, savepoint
 
-    # Check if bearer token file exists
-    try:
-        if not os.path.isfile("./bearer_token.txt"):
-            with open('bearer_token.txt', 'r', encoding="utf-8") as file:
-                config.bearer = file.read()
-    except Exception:
-        raise FileNotFoundError("Could not read/find bearer token file")
+    if config.using_bearer_from_file:
+        # Check if bearer token file exists
+        try:
+            if not os.path.isfile("./bearer_token.txt"):
+                with open('bearer_token.txt', 'r', encoding="utf-8") as file:
+                    config.bearer = file.read()
+        except Exception:
+            raise FileNotFoundError("Could not read/find bearer token file")
 
     setup_database()  # TODO: Start this up on website ini, not on collection ini
 
