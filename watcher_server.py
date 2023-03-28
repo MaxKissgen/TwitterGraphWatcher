@@ -103,7 +103,15 @@ def read_file_data(file_data, sep):
     if file_data.endswith(".xslx") or file_data.endswith(".XSLX"):
         data = pd.read_excel(file_data, names=["Name", "WikidataID", "TwitterHandle"])
     else:
-        data = pd.read_csv(file_data, sep=sep, names=["Name", "WikidataID", "TwitterHandle"])
+        # Handhold the parsing process first by explicitly trying ; and , because in some instances python did not recognize them
+        # If it then still doesn't work, it's up to the user to fix their file
+        try:
+            data = pd.read_csv(file_data, sep=";", names=["Name", "WikidataID", "TwitterHandle"])
+        except:
+            try:
+                data = pd.read_csv(file_data, sep=",", names=["Name", "WikidataID", "TwitterHandle"])
+            except:
+                data = pd.read_csv(file_data, names=["Name", "WikidataID", "TwitterHandle"])
 
     # Try to remove column index row if present, guessing an index row by checking cell formats
     wikidata_format = re.compile("^Q[0-9]+$")

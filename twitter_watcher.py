@@ -94,11 +94,17 @@ def build_queries(filter_emojis=[], filter_keywords=[], filter_hashtags=[], filt
     query_tail = ")"
     i = 0
 
+    # Remove empty strings from the lists
+    filter_emojis[:] = [el for el in filter_emojis if el != ""]
+    filter_keywords[:] = [el for el in filter_keywords if el != ""]
+    filter_hashtags[:] = [el for el in filter_hashtags if el != ""]
+    filter_handles[:] = [el for el in filter_handles if el != ""]
+
     # If we don't use any filters at all
-    if (len(filter_emojis) == 0 or (len(filter_emojis) == 1 and filter_emojis[0] == ""))\
-            and (len(filter_keywords) == 0 or (len(filter_keywords) == 1 and filter_keywords[0] == "")) \
-            and (len(filter_hashtags) == 0 or (len(filter_hashtags) == 1 and filter_hashtags[0] == "")) \
-            and (len(filter_handles) == 0 or (len(filter_handles) == 1 and filter_handles[0] == "")):
+    if (len(filter_emojis) == 0)\
+            and (len(filter_keywords) == 0) \
+            and (len(filter_hashtags) == 0) \
+            and (len(filter_handles) == 0):
         return built_queries
 
     #TODO: Check emoji and word syntax, try to understand how to check for non-english letters etc
@@ -595,8 +601,11 @@ def create_tweet_edge(tweet_type, tweet_json, _from_tid, _to_tid, sentiment_valu
                 if tweet_json["entities"].get("hashtags") is not None:
                     doc["hashtags"] = tweet_json["entities"]["hashtags"]
             if tweet_json.get("withheld") is not None:
-                doc["withheld"]["country_codes"] = tweet_json["withheld"]["country_codes"]
-                doc["withheld"]["scope"] = tweet_json["withheld"]["scope"]
+                doc["withheld"] = {}
+                if tweet_json["withheld"].get("country_codes") is not None:
+                    doc["withheld"]["country_codes"] = tweet_json["withheld"]["country_codes"]
+                if tweet_json["withheld"].get("scope") is not None:
+                    doc["withheld"]["scope"] = tweet_json["withheld"]["scope"]
 
             doc["public_metrics"] = tweet_json["public_metrics"]
             doc["possibly_sensitive"] = tweet_json["possibly_sensitive"]
