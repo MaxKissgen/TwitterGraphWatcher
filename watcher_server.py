@@ -127,7 +127,14 @@ def read_file_data(file_data, sep):
 
 def set_bearer_token(get_from_file=True, value=""):
     if get_from_file:
-        config.using_bearer_from_file = True
+        token_file_path = os.path.join(app.root_path, "bearer_token.txt")
+        # Check if bearer token file exists
+        try:
+            if os.path.isfile(token_file_path):
+                with open(token_file_path, 'r', encoding="utf-8") as file:
+                    config.bearer = file.read().replace(" ", "").replace("\n", "")
+        except Exception:
+            raise FileNotFoundError("Could not read/find bearer token file")
     else:
         if value == "":
             raise Exception("Got empty bearer token")
@@ -531,3 +538,4 @@ def progress():
     return '{"people_percentage":' + str(int(people_fetched)) + ',"step_kind":"' + config.Timesteps(
         config.time_step_size).name \
            + '","steps_percentage":' + str(int(steps_fetched)) + '}'
+
