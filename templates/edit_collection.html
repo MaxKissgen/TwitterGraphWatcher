@@ -9,6 +9,7 @@
         {% block styles %}
             <!-- Bootstrap CSS -->
             {{ bootstrap.load_css() }}
+            {{ bootstrap.load_js() }}
         {% endblock %}
 
         <title>Twitter Watcher</title>
@@ -19,42 +20,54 @@
         {% from 'bootstrap5/form.html' import render_form, render_field, render_form_row %}
         {% from 'bootstrap5/nav.html' import render_nav_item, render_breadcrumb_item %}
 
-        <!--<p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Stop Collection</p>
-        {{ render_field(button_form.stop_field) }}
-        <div style="height:20px"></div>-->
-
-        {{ render_messages(dismissible=True) }}
-
         <form role="form" method="POST" action="/" enctype="multipart/form-data" novalidate>
             {{ button_form.csrf_token }}
-            <nav class="navbar navbar-expand-lg navbar-light" style="background-color: #435D9A;">
+            <nav class="navbar navbar-expand-lg navbar-light" style="background-color: #435D9A; display:block; height: 92px; padding-top: 10px;">
+                <div style="width: 84%; display:inline-flex; float:left">
                 <div style="width: 30px"></div> <!-- Logo Placeholder -->
-                <div style="margin-top: 12px">
+                <div style="width:auto; display: inline-block">
+                    <p class="row" style="margin-bottom: 0"><b>Status:</b></p>
                     <p class="row" style="margin-bottom: 0"><b>People:</b></p>
                     <p class="row" ><b>Steps:</b></p>
                 </div>
-                <div style="margin: 0 10px 0 10px; padding: 0 10px 0 10px; width: 40%">
-                    <div class="row progress" style="width: 100%">
+                <div style="margin: 0 10px 0 10px; padding: 0 10px 0 10px; width: 40%; display: inline-block">
+                    <p class="row" id="collection-status" style="margin-bottom: 0; width: 100%">Collecting</p>
+                    <div class="row progress" style="margin-top: 6px; width: 100%">
                       <div id="collection-progress-bar-people" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
                     <div class="row progress" style="margin-top: 8px; width: 100%">
                       <div id="collection-progress-bar-time" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100"></div>
                     </div>
                 </div>
-                <div style="width: 10px"></div>
-                <div class="navbar-nav mr-auto">
+                <!-- <div style="width: 10px; display: inline-block"></div>-->
+                <div class="navbar-nav" style="display:inline-flex">
+                    <div style="margin-top:12px">
                     {{ render_field(button_form.pause_field, button_style="warning", button_size="lg") }}
+                    </div>
                     <div style="width: 10px"></div>
+                    <div style="margin-top:12px">
                     {{ render_field(button_form.stop_field, button_style="danger", button_size="lg") }}
+                    </div>
+                </div>
+                </div>
+                <div style="margin-left: 10px; margin-right: 10px; float: right">
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#downloadModal">
+                        Download Results
+                    </button>
                 </div>
             </nav>
 
             <div style="margin: 10px 50px 10px 30px; ">
+                <!-- <div style="display:flex; justify-content:center">
+                <div style="display:flex; "> -->
+                {{ render_messages(dismissible=True) }}
+                <!-- </div>
+                </div> -->
                 <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Edit People</p>
                 <div style="margin-left: 10px">
-                    <p style="font-size: 18px; color: #4f8ab5">Change your collected people via CSV files here. For each person a row should look like: <em>Name,WikidataID,TwitterHandle</em></p>
-                    {{ render_form_row([button_form.add_people_field, button_form.add_people_separator_field]) }}
-                    {{ render_form_row([button_form.remove_people_field, button_form.remove_people_separator_field]) }}
+                    <p style="font-size: 18px; color: #4f8ab5">Add or remove people from the watchlist. For each person a row should look like: <em>Name,WikidataID,TwitterHandle</em></p>
+                    <div style="display: inline-flex; margin-right:20px">{{ render_field(button_form.add_people_field) }}</div>
+                    <div style="display: inline-flex">{{ render_field(button_form.remove_people_field) }}</div>
                 </div>
                 <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Edit Tweet Filters</p>
                 <div style="margin-left: 10px">
@@ -81,44 +94,97 @@
                 let fetchTimeout;
 
                 async function getProgress() {
-                  let progress;
+                    let progress;
 
-                  let progressBar1ID = "collection-progress-bar-people"
-                  let progressBar2ID = "collection-progress-bar-time"
+                    let progressBar1ID = "collection-progress-bar-people"
+                    let progressBar2ID = "collection-progress-bar-time"
 
-                  try {
-                    const res = await fetch("/progress");
-                    progress = JSON.parse(await res.text());
-                  } catch (e) {
-                    console.error("Error: ", e);
-                  }
+                    try {
+                      const res = await fetch("/progress");
+                      progress = JSON.parse(await res.text());
+                    } catch (e) {
+                      console.error("Error: ", e);
+                    }
 
-                  let progressBar1 = document.getElementById(progressBar1ID)
-                  let progressBar2 = document.getElementById(progressBar2ID)
-                  progressBar1.setAttribute("aria-valuenow", progress["people_percentage"]);
-                  progressBar1.style["width"] = progress["people_percentage"] + "%";
-                  progressBar1.innerHTML = progress["people_percentage"] + "% of people collected"
-                  progressBar2.setAttribute("aria-valuenow", progress["steps_percentage"]);
-                  progressBar2.style["width"] = progress["steps_percentage"] + "%";
-                  if(progress["step_kind"] === "NO_STEPS") {
-                    progressBar2.innerHTML = "No Timesteps Used";
-                  } else {
-                    progressBar2.innerHTML = progress["steps_percentage"] + "% of "+ progress["step_kind"].toLowerCase() +" collected";
-                  }
+                    let progressBar1 = document.getElementById(progressBar1ID)
+                    let progressBar2 = document.getElementById(progressBar2ID)
+                    document.getElementById("collection-status").innerText = progress["status"].charAt(0) + progress["status"].slice(1).toLowerCase().replace("_"," ")
+                    if(progress["status"] === "COLLECTION_FINISHED") {
+                        progressBar1.style["color"] = "#FFFFFF";
+                        progressBar2.style["color"] = "#FFFFFF";
+                        progressBar1.innerHTML = "<b>DONE!</b>";
+                        progressBar2.innerHTML = "<b>DONE!</b>";
+                        return;
+                    }
+                    progressBar1.setAttribute("aria-valuenow", progress["people_percentage"]);
+                    progressBar1.style["width"] = progress["people_percentage"] + "%";
+                    progressBar1.innerHTML = progress["people_percentage"] + "% of people collected"
+                    progressBar2.setAttribute("aria-valuenow", progress["steps_percentage"]);
+                    progressBar2.style["width"] = progress["steps_percentage"] + "%";
+                    if(progress["step_kind"] === "NO_STEPS") {
+                      progressBar2.innerText = "No Timesteps Used";
+                    } else {
+                      progressBar2.innerText = progress["steps_percentage"] + "% of "+ progress["step_kind"].toLowerCase() +" collected";
+                    }
 
-                  if (progress["steps_percentage"] == 100 && progress["people_percentage"] == 100){
-                    document.getElementById(progressBar1).innerHTML += " Done.";
-                    document.getElementById(progressBar2).innerHTML += " Done.";
-                    clearTimeout(timeout);
-                    return false;
-                  }
+                    if (progress["steps_percentage"] == 100 && progress["people_percentage"] == 100){
+                      document.getElementById(progressBar1).innerHTML += " Done.";
+                      document.getElementById(progressBar2).innerHTML += " Done.";
+                      clearTimeout(timeout);
+                      return false;
+                    }
 
-                  timeout = setTimeout(getProgress, 25000);
+                    timeout = setTimeout(getProgress, 25000);
                 }
 
                 document.addEventListener('DOMContentLoaded', function() {
-                   getProgress();
+                    getProgress();
                 });
         </script>
+
+        <div class="modal fade" id="downloadModal" tabindex="-1" aria-labelledby="downloadModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="downloadModalLabel">Download the Graph</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <form role="form" method="POST" action="/" enctype="multipart/form-data" novalidate>
+                        <div class="modal-body">
+                            <p style="font-size: 18px; color: #4f8ab5">Here you have the option to download the fetched graph
+                                (or parts of it) in GraphML format. You can customize which time frame twitter
+                                interactions should be considered. <br>You can also select whether additional information about
+                                nodes and edges such as follower numbers or text of a tweet should be included.</p>
+                            {{ download_form.csrf_token }}
+                            {{ render_field(download_form.file_name_field) }}
+                            {{ render_field(download_form.edge_kinds_retweets_field) }}
+                            {{ render_field(download_form.edge_kinds_quotetweets_field) }}
+                            {{ render_field(download_form.edge_kinds_mentions_field) }}
+                            {{ render_field(download_form.edge_kinds_replies_field) }}
+                            {{ render_field(download_form.edge_kinds_likes_field) }}
+                            <div class="row">
+                                <div class="col-md-5">
+                                    <div>
+                                        {{ render_field(download_form.start_date_field) }}
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div>
+                                        {{ render_field(download_form.end_date_field) }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {{ render_field(download_form.node_info_field) }}
+                            {{ render_field(download_form.edge_info_field) }}
+
+                        </div>
+                        <div class="modal-footer">
+                            {{ render_field(download_form.submit_field) }}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
     </body>
 </html>

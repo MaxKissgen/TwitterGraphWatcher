@@ -3,8 +3,21 @@ from enum import Enum
 import pandas as pd
 
 
+# Status class for showing what the watcher is currently doing
+class WatcherStatus(Enum):
+    COLLECTING_PEOPLE = 0
+    COLLECTING_TWEETS = 1
+    CATCHING_UP_KEYWORDS = 2
+    CATCHING_UP_PEOPLE = 3
+    WAITING_FOR_RATE_LIMIT = 4
+    COLLECTION_FINISHED = 5
+
+
+status = 0
+
+
 # Timestep class for figuring out how much the watcher should collect in one go
-class Timesteps(Enum):
+class TimeSteps(Enum):
     NO_STEPS = 0
     MONTHS = 1
     WEEKS = 2
@@ -13,7 +26,7 @@ class Timesteps(Enum):
 
 start_date = datetime(2022, 2, 21)
 end_date = datetime(2023, 1, 16)
-time_step_size = Timesteps.NO_STEPS
+time_step_size = TimeSteps.NO_STEPS
 
 using_bearer_from_file = False
 bearer = ""  # TODO: Maybe have the User be able to put this into a file somewhere, otherwise just put the option into the server

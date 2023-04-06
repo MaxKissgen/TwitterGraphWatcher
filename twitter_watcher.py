@@ -7,6 +7,8 @@ import subprocess
 import sys
 
 from configobj import ConfigObj
+import xml.etree.cElementTree as ET
+from io import BytesIO
 
 import time
 import pandas as pd
@@ -57,12 +59,16 @@ exit_sleep = threading.Event()
 #TODO: Check this, sometimes it doesnt seem to work
 def sleep_interruptible(time_in_secs):
     print("Rate limit hit, sleeping " + str(time_in_secs) + " seconds")
+    original_status = config.WatcherStatus(config.status)
+    config.status = config.WatcherStatus.WAITING_FOR_RATE_LIMIT
+
     while not exit_sleep.is_set():
         exit_sleep.wait(time_in_secs)
         # Set() to exit the loop. Theoretically this should not be necessary:
         # The wait method should theoretically call set() after the timeout in seconds. But it does not, so here we are.
         exit_sleep.set()
         print("DONE WAITING")
+        config.status = original_status
     exit_sleep.clear()
 
 
@@ -157,7 +163,7 @@ def setup_database():
         raise ValueError("database config empty/not found")
 
     print("USING TEST PORT")
-    db_config['database_port'] = "8530"  # TODO: REMOVE THIS PORT, THIS IS FOR TESTING
+    db_config['database_port'] = "8531"  # TODO: REMOVE THIS PORT, THIS IS FOR TESTING
 
     arango_url = db_config['database_connection_type'] + "://" + db_config['database_address'] + ":" + db_config['database_port']
     username = db_config['username']
@@ -225,6 +231,7 @@ def setup_database():
         database.createCollection(className="Edges", name="Follows", allowUserKeys=True)
     if not db_connection["TwitterWatcher"].hasCollection("UserBotDetectionValues"):  # Check if I'm actually doing this
         database.createCollection(className="Collection", name="UserBotDetectionValues", allowUserKeys=True)
+
 
 # Stops the database (if it was started by the watcher)
 def stop_database():
@@ -969,7 +976,7 @@ def collect_tweets_by_query(person, t_query, t_client, start_date, end_date, cat
                                                         until_id=None,
                                                         user_fields=None)
                 request_got_through = True
-                time.sleep(2)  # Mandatory wait between all full active tweet search requests is > 1 second
+                time.sleep(1.2)  # Mandatory wait between all full active tweet search requests is > 1 second
                 if t_response.data is not None:
                     for tweet_object in t_response.data:
                         tweets.append(tweet_object.data)
@@ -1198,13 +1205,13 @@ def catch_up_new_people(new_people):
 
 def incr_date_by_timestep(date, time_step_size):
     incr_date = date
-    if time_step_size == config.Timesteps.NO_STEPS:
+    if time_step_size == config.TimeSteps.NO_STEPS:
         incr_date = config.end_date
-    elif time_step_size == config.Timesteps.MONTHS:
+    elif time_step_size == config.TimeSteps.MONTHS:
         incr_date += relativedelta(months=+1)
-    elif time_step_size == config.Timesteps.WEEKS:
+    elif time_step_size == config.TimeSteps.WEEKS:
         incr_date += relativedelta(weeks=+1)
-    elif time_step_size == config.Timesteps.DAYS:
+    elif time_step_size == config.TimeSteps.DAYS:
         incr_date += relativedelta(days=+1)
     else:
         raise Exception("Got no valid timesteps value for date incrementation")
@@ -1226,7 +1233,7 @@ def load_savepoint():
         savepoint.current_start_date = datetime.strptime(savepoint_json["savepoint_current_start_date"], '%Y-%m-%d %H:%M:%S') if savepoint_json["savepoint_current_start_date"] is not None else None
 
         config.end_date = datetime.strptime(savepoint_json["end_date"], '%Y-%m-%d %H:%M:%S') if savepoint_json["end_date"] is not None else None
-        config.time_step_size = config.Timesteps(int(savepoint_json["time_step_size"]))
+        config.time_step_size = config.TimeSteps(int(savepoint_json["time_step_size"]))
         config.do_sentiment_analysis = savepoint_json["do_sentiment_analysis"]
         config.do_bot_detection = savepoint_json["do_bot_detection"]
         queries = savepoint_json["queries"]
@@ -1333,6 +1340,7 @@ def collection(use_savepoint=False):
 
     config.stop_collection = False
     config.collection_running = True
+    config.status = config.WatcherStatus.COLLECTING_TWEETS
 
     people_check_needed = False  # TODO: Set to true
     last_people_check_time = datetime.now(timezone.utc)
@@ -1361,7 +1369,7 @@ def collection(use_savepoint=False):
     end_date_incr = incr_date_by_timestep(current_start_date, config.time_step_size)
     current_end_date = None
     if (config.end_date is None or config.end_date.date() > datetime.today().date()) \
-       and config.time_step_size == config.Timesteps.NO_STEPS:
+       and config.time_step_size == config.TimeSteps.NO_STEPS:
         raise Exception("No end date given/End date is in future and no increment")
     if config.end_date is None or end_date_incr.date() <= config.end_date.date():
         current_end_date = end_date_incr
@@ -1384,6 +1392,8 @@ def collection(use_savepoint=False):
             last_people_check_time = datetime.now(timezone.utc)
 
         if config.added_people is not None:
+            config.status = config.WatcherStatus.CATCHING_UP_PEOPLE
+
             collect_people(t_client, config.added_people)
             if config.stop_collection:
                 current_person_people_collection = None
@@ -1403,7 +1413,6 @@ def collection(use_savepoint=False):
             added_people_trimmed = pd.DataFrame()  # Extra variable here to not touch added_people for the savepoint
             for index in existing_people_indexes:
                 added_people_trimmed = config.added_people.drop(index)
-
 
             catch_up_new_people(added_people_trimmed)
 
@@ -1466,17 +1475,25 @@ def collection(use_savepoint=False):
 
         # TODO: Still a bit dumb, refactor so that filters are added to existing queries (or that existing filters must not occur during catchup to not doubly search tweets), maybe also offer possibility of date from when catch up should begin
         # Add new filters
-        if config.added_filters is not None:
+        if config.added_filters is not None and (config.added_filters["emojis"] == [""] and config.added_filters["keywords"] == [""] and config.added_filters["hashtags"] == [""] and config.added_filters["handles"] == [""]):
+            config.added_filters = None
+        elif config.added_filters is not None:
             print("Adding filters")
+            config.status = config.WatcherStatus.CATCHING_UP_KEYWORDS
+
             catch_up_queries = build_queries(config.added_filters["emojis"], config.added_filters["keywords"], config.added_filters["hashtags"], config.added_filters["handles"])
-            if savepoint.person is not None and current_start_date.date() != config.start_date.date():
+            if savepoint.person is not None: # and current_start_date.date() != config.start_date.date():
                 for person in people.itertuples(name=None, index=True):
                     for catchup_query in catch_up_queries:
-                        collect_tweets_by_query(person, catchup_query, t_client, catch_up=True, start_date=config.start_date, end_date=current_start_date) #TODO: make catch_up date settable
-                        if person[2] == savepoint.person[2] and catchup_query == savepoint.query: # TODO: Check if this can even ever happen.
-                            break
+                        collect_tweets_by_query(person, catchup_query, t_client, catch_up=True, start_date=config.start_date, end_date=current_end_date) #TODO: make catch_up date settable
+                        #if person[2] == savepoint.person[2] and catchup_query == savepoint.query: # TODO: Check if this can even ever happen.
+                        #    break
                     if person[2] == savepoint.person[2]:
                         break
+                    if config.stop_collection:
+                        break
+            else: # reset the savepoint
+                delete_savepoint() #TODO: Check this
 
             if not config.stop_collection:
                 config.tweetEmojis.extend(config.added_filters["emojis"])
@@ -1491,6 +1508,7 @@ def collection(use_savepoint=False):
                 savepoint.like_pagination = None
 
                 config.added_filters = None
+
 
         # Remove filters, they will not be considered in the next collection step
         if config.removed_filters is not None:
@@ -1520,6 +1538,8 @@ def collection(use_savepoint=False):
 
         # Collect the tweets
         for person in people.itertuples(name=None, index=True):
+            config.status = config.WatcherStatus.COLLECTING_TWEETS
+
             if savepoint.person is None or person[2] == savepoint.person[2]:  # Skip people we already collected if we have a savepoint
                 current_person = person
                 for query in queries:
@@ -1554,9 +1574,15 @@ def collection(use_savepoint=False):
             return
 
         # Increment time frame by one step
-        if config.time_step_size != config.Timesteps.NO_STEPS:
+        if config.time_step_size != config.TimeSteps.NO_STEPS:
             current_start_date = current_end_date
-            current_end_date = incr_date_by_timestep(current_end_date, config.time_step_size)
+
+            end_date_incr = incr_date_by_timestep(current_end_date, config.time_step_size)
+            if config.end_date is not None and end_date_incr.date() > config.end_date.date():
+                current_end_date = config.end_date()
+            else:
+                current_end_date = end_date_incr
+
             if current_end_date.date() > datetime.today().date():
                 current_end_date = datetime.today()
 
@@ -1565,4 +1591,67 @@ def collection(use_savepoint=False):
             print("Reached end date, stopping collection...")
             end_date_reached = True
 
+    config.status = config.WatcherStatus.COLLECTION_FINISHED
+
     stop_database() #TODO: Do this on the website not here
+
+
+def export_to_graph_ml(start_date=None, end_date=None, edge_kinds=None, include_node_info=True, include_edge_info=False):
+    setup_database()
+
+    if edge_kinds is None:
+        edge_kinds = ["Follows", "Likes", "Mentions", "Retweets", "QuoteTweets", "Replies"]
+    if start_date is None:
+        start_date = datetime.min
+    if end_date is None:
+        end_date = datetime.max
+
+    root = ET.Element("root")
+    doc = ET.SubElement(root,
+                        "graphml",
+                        {
+                            "xmlns": "http://graphml.graphdrawing.org/xmlns",
+                            "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
+                            "xsi:schemaLocation": "http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"
+                        })
+    ET.SubElement(doc, "key", {"id": "nodeData", "for": "node", "attr.name": "nodeData", "attr.type": "string"})
+    ET.SubElement(doc, "key", {"id": "edgeKind", "for": "edge", "attr.name": "edgeKind", "attr.type": "string"})
+    ET.SubElement(doc, "key", {"id": "edgeData", "for": "edge", "attr.name": "edgeData", "attr.type": "string"})
+    graph_elem = ET.SubElement(doc, "graph", {"id": "twitter-watcher-graph", "edgedefault": "directed"})
+
+    for node_dict in db_connection["TwitterWatcher"]["People"].fetchAll(rawResults=True):
+        node_elem = ET.SubElement(graph_elem, "node", {"id": node_dict["_key"]})
+        if include_node_info:
+            node_dict.pop('_key', None)
+            node_dict.pop('_rev', None)
+            node_dict.pop('_id', None)
+            node_info_xml_conform = json.dumps(node_dict)
+            node_info_xml_conform = node_info_xml_conform.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&apos;").replace("\"", "&quot;")
+            node_elem_data = ET.SubElement(node_elem, "data", {"key": "nodeData"})
+            node_elem_data.text = node_info_xml_conform
+
+    for edge_kind in edge_kinds:
+        for edge_dict in db_connection["TwitterWatcher"][edge_kind].fetchAll(rawResults=True):
+            # Only process edges in timeframe
+            edge_date = datetime.fromisoformat(edge_dict["created_at"].replace("Z", "+00:00")) if edge_dict.get("created_at") is not None else None
+            if edge_date is None or (start_date.date() <= edge_date.date() <= end_date.date()):
+                edge_elem = ET.SubElement(graph_elem, "edge", {"id": edge_dict["_key"], "source": edge_dict["_from"].removeprefix("People/"), "target": edge_dict["_to"].removeprefix("People/")})
+                if include_edge_info:
+                    edge_elem_data = ET.SubElement(edge_elem, "data", {"key": "edgeKind"})
+                    edge_elem_data.text = edge_kind
+
+                    edge_dict.pop('_key', None)
+                    edge_dict.pop('_rev', None)
+                    edge_dict.pop('_id', None)
+                    edge_dict.pop('_from', None)
+                    edge_dict.pop('_to', None)
+                    edge_info_xml_conform = json.dumps(edge_dict)
+                    edge_info_xml_conform = edge_info_xml_conform.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'","&apos;").replace("\"", "&quot;")
+                    edge_elem_data = ET.SubElement(edge_elem, "data", {"key": "edgeData"})
+                    edge_elem_data.text = edge_info_xml_conform
+
+    tree = ET.ElementTree(doc)
+    tree.write("testXML.xml", encoding='utf-8', xml_declaration=True)
+    f = BytesIO()
+    tree.write(f, encoding='utf-8', xml_declaration=True)
+    return f

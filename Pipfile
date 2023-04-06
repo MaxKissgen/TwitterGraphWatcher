@@ -19,6 +19,8 @@ flask-wtf = "1.1.1"
 wtforms = "3.0.1"
 python-dateutil = "2.8.2"
 waitress = "*"
+openpyxl = "*"
+charset-normalizer = "*"
 
 [dev-packages]
 
