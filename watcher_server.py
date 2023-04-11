@@ -96,11 +96,12 @@ class EditCollectionParametersForm(FlaskForm):
     # end_date_field = DateField(format=["%Y-%m-%d"])
     # no_end_date_field = SwitchField("No end-date", render_kw={"onchange": "end_date_switching(this)"},false_values=[False,'false','False'])
 
-    submit_field = SubmitField("Set Changes")
+    submit_field = SubmitField("Update and Resume")
 
 
 class DownloadForm(FlaskForm):
     file_name_field = StringField("Name of the Graph/File", default="Twitter Graph")
+    involved_nodes_field = StringField("Wikidata ids of the nodes to import", render_kw={"placeholder": "Id1,Id2..."})
     edge_kinds_retweets_field = BooleanField("Retweets", default=True)
     edge_kinds_quotetweets_field = BooleanField("Quote Tweets", default=True)
     edge_kinds_mentions_field = BooleanField("Mentions", default=True)
@@ -109,7 +110,8 @@ class DownloadForm(FlaskForm):
     start_date_field = DateField(format=["%Y-%m-%d"])
     end_date_field = DateField(format=["%Y-%m-%d"])
     node_info_field = SwitchField("Include Node Data", false_values=[False, 'false', 'False'], default=True)
-    edge_info_field = SwitchField("Include Edge Data", false_values=[False, 'false', 'False'], default=True)
+    edge_info_field = SwitchField("Include Edge Data", false_values=[False, 'false', 'False'], default=False)
+    edge_weight_field = SwitchField("Weigh Edges", false_values=[False, 'false', 'False'], default=False)
     submit_field = SubmitField("Download")
 
 
@@ -177,7 +179,7 @@ def set_bearer_token(get_from_file=True, value=""):
 @app.route('/TwitterWatcher', methods=('GET', 'POST'))
 def index():
     global collection_paused, x
-    # config.collection_running = True  # TODO: Remove
+    #config.collection_running = True  # TODO: Remove
 
     download_form = DownloadForm()
 
@@ -190,25 +192,35 @@ def index():
             end_date = datetime.strptime(download_form.end_date_field.data.strftime('%m-%d-%y'),'%m-%d-%y')
 
         edge_kinds = []
-        if download_form.edge_kinds_retweets_field.data is not None:
+        if download_form.edge_kinds_retweets_field.data:
             edge_kinds.append("Retweets")
-        if download_form.edge_kinds_quotetweets_field.data is not None:
+        if download_form.edge_kinds_quotetweets_field.data:
             edge_kinds.append("QuoteTweets")
-        if download_form.edge_kinds_mentions_field.data is not None:
+        if download_form.edge_kinds_mentions_field.data:
             edge_kinds.append("Mentions")
-        if download_form.edge_kinds_replies_field.data is not None:
+        if download_form.edge_kinds_replies_field.data:
             edge_kinds.append("Replies")
-        if download_form.edge_kinds_likes_field.data is not None:
+        if download_form.edge_kinds_likes_field.data:
             edge_kinds.append("Likes")
 
-        graphml_string = twitter_watcher.export_to_graph_ml(start_date=start_date, end_date=end_date,
+        involved_nodes = None
+        if download_form.involved_nodes_field.data is not None:
+            involved_nodes_list = download_form.involved_nodes_field.data.split(",")
+            involved_nodes = {}
+            for nodeId in involved_nodes_list:
+                involved_nodes[nodeId] = None #Use a map for quicker access
+
+        #_adjust_for_user_eval
+        graphml_string = twitter_watcher.export_to_graph_ml(involved_nodes=involved_nodes,
+                                                            start_date=start_date, end_date=end_date,
                                                             edge_kinds=edge_kinds,
                                                             include_node_info=download_form.node_info_field.data,
-                                                            include_edge_info=download_form.edge_info_field.data)
+                                                            include_edge_info=download_form.edge_info_field.data,
+                                                            include_edge_weights=download_form.edge_weight_field.data)
 
         return send_file(BytesIO(graphml_string.getvalue()), as_attachment=True, download_name=download_form.file_name_field.data + ".xml")
 
-    if not config.collection_running and not collection_paused:
+    if not config.collection_running and not collection_paused and (request.args.get("form") is None or request.args.get("form") == "collection-start"):
         button_form = StartCollectionParametersForm()  # start_date_field=datetime.datetime.today().date(), end_date_field=datetime.datetime.today().date())
         button_form.start_field.render_kw = {'disabled': 'disabled'}
 
@@ -221,8 +233,6 @@ def index():
         if button_form.end_date_field.data is None:
             button_form.end_date_field.render_kw = {"value": datetime.today().date()}  # + ""}
 
-        print("HELlOOOOOOOOOOOOOOOO")
-
         if button_form.is_submitted():
             if button_form.start_field.data:
                 print("STARTING COLLECTION")
@@ -232,7 +242,10 @@ def index():
                     x = threading.Thread(target=twitter_watcher.collection, daemon=True)
                     x.start()
                     config.collection_running = True
-                    return render_template('edit_collection.html', download_form=DownloadForm(), button_form=EditCollectionParametersForm())
+                    #button_form = EditCollectionParametersForm()
+                    #button_form.submit_field.render_kw = {"disabled": "disabled"}
+                    return redirect("/")
+                    #return render_template('start_collection.html', download_form=DownloadForm(), button_form=button_form)
                 else:
                     flash("Error: Collection is already running", "error")
             elif button_form.start_savepoint_field.data:
@@ -258,7 +271,8 @@ def index():
                     x = threading.Thread(target=twitter_watcher.collection, args=(True,), daemon=True)
                     x.start()
                     config.collection_running = True
-                    return render_template('edit_collection.html', download_form=DownloadForm(), button_form=EditCollectionParametersForm())
+                    return redirect("/")
+                    #return render_template('edit_collection.html', download_form=DownloadForm(), button_form=EditCollectionParametersForm())
                 else:
                     flash("Error: Collection is already running", "error")
             elif button_form.validate():
@@ -357,25 +371,30 @@ def index():
             button_form=button_form
         )
 
-    else:  # TODO: Check if collection has stopped unintentionally and, if so, why and output to the user
+    elif request.args.get("form") is None or request.args.get("form") == "collection-edit":  # TODO: Check if collection has stopped unintentionally and, if so, why and output to the user
         button_form = EditCollectionParametersForm()
+        if not collection_paused or config.collection_running:
+            button_form.submit_field.render_kw = {"disabled": "disabled"}
+        elif collection_paused:
+            button_form.pause_field.render_kw = {"disabled": "disabled"}
 
         if button_form.is_submitted():
             if button_form.stop_field.data or button_form.pause_field.data:
                 if button_form.pause_field.data:  # Switch buttons and stop/run collection
                     if not collection_paused:
                         collection_paused = True
-                        button_form.pause_field.render_kw = {"class": "btn-success", "value": "Resume Collection",
+                        button_form.pause_field.render_kw = {#"class": "btn-success", "value": "Resume Collection",
                                                              "disabled": "disabled"}
+                        button_form.submit_field.render_kw = {}
                         twitter_watcher.stop_collection_process()
                         while config.collection_running:
                             time.sleep(0.2)
-                        button_form.pause_field.render_kw = {"class": "btn-success", "value": "Resume Collection"}
-                    else:
-                        collection_paused = False
-                        x = threading.Thread(target=twitter_watcher.collection, args=(True,), daemon=True)
-                        x.start()
-                        button_form.pause_field.render_kw = {"class": "btn-warning", "value": "Pause Collection"}
+                        #button_form.submit_field.render_kw = {}#"class": "btn-success", "value": "Resume Collection"}
+                    # else:
+                    #     collection_paused = False
+                    #     x = threading.Thread(target=twitter_watcher.collection, args=(True,), daemon=True)
+                    #     x.start()
+                    #     button_form.pause_field.render_kw = {"class": "btn-warning", "value": "Pause Collection"}
 
                 elif button_form.stop_field.data:
                     button_form.pause_field.render_kw = {"disabled": "disabled"}
@@ -384,6 +403,7 @@ def index():
                     collection_paused = False
                     while config.collection_running:
                         time.sleep(0.2)
+                    twitter_watcher.calculate_bot_averages()
 
                     return redirect('/TwitterWatcher')
 
@@ -420,7 +440,11 @@ def index():
                         return render_template(
                             'edit_collection.html',
                             download_form=DownloadForm(),
-                            button_form=button_form
+                            button_form=button_form,
+                            keywords=str(config.tweetWords).replace("[", "").replace("]", "").replace("'", ""),
+                            emojis=str(config.tweetEmojis).replace("[", "").replace("]", "").replace("'", ""),
+                            hashtags=str(config.tweetHashtags).replace("[", "").replace("]", "").replace("'",""),
+                            mentions=str(config.tweetHandles).replace("[", "").replace("]", "").replace("'","")
                         )
 
                     config.do_bot_detection = button_form.bot_detection_field.data
@@ -433,28 +457,44 @@ def index():
                     print(config.tweetHandles)
                     print(config.people)
 
-                    print(button_form.pause_field.name, button_form.pause_field.description)
-                    # button_form.pause_field.render_kw = {"value": "Edit Changes"}
-                    button_form.submit_field.render_kw = {"value": "Edit Changes"}
+                    #button_form.submit_field.render_kw = {"value": "Edit Changes"}
 
                     # restart the collection to apply changes, if it was still running
                     if not collection_paused:
                         collection_paused = True
-                        button_form.pause_field.render_kw = {"class": "btn-success", "disabled": "disabled"}
+
                         twitter_watcher.stop_collection_process()
                         while config.collection_running:
                             time.sleep(0.2)
-                        button_form.pause_field.render_kw = {"class": "btn-success"}
-                        collection_paused = False
-                        x = threading.Thread(target=twitter_watcher.collection, args=(True,), daemon=True)
-                        x.start()
+
+                    button_form.pause_field.render_kw = {}
+                    collection_paused = False
+                    x = threading.Thread(target=twitter_watcher.collection, args=(True,), daemon=True)
+                    x.start()
 
                     flash("Changes successfully applied!", "success")
+
+                    button_form = EditCollectionParametersForm(formdata=None)
+                    button_form.submit_field.render_kw = {"disabled": "disabled"}
+
+                    return render_template(
+                        'edit_collection.html',
+                        download_form=DownloadForm(),
+                        button_form=button_form,
+                        keywords=str(config.tweetWords).replace("[","").replace("]","").replace("'",""),
+                        emojis=str(config.tweetEmojis).replace("[","").replace("]","").replace("'",""),
+                        hashtags=str(config.tweetHashtags).replace("[","").replace("]","").replace("'",""),
+                        mentions=str(config.tweetHandles).replace("[","").replace("]","").replace("'","")
+                    )
 
         return render_template(
             'edit_collection.html',
             download_form=DownloadForm(),
-            button_form=button_form
+            button_form=button_form,
+            keywords=str(config.tweetWords).replace("[","").replace("]","").replace("'",""),
+            emojis=str(config.tweetEmojis).replace("[","").replace("]","").replace("'",""),
+            hashtags=str(config.tweetHashtags).replace("[","").replace("]","").replace("'",""),
+            mentions=str(config.tweetHandles).replace("[","").replace("]","").replace("'","")
         )
 
 
@@ -474,7 +514,6 @@ def index_api():
             x.start()
             config.collection_running = True
         else:
-            print("HELlOOOOOOOOOOOOOOOO")
 
             try:
                 bearer_token = request.form.get("bearer_token", default=None, type=str)
@@ -523,7 +562,6 @@ def index_api():
             config.do_bot_detection = request.form.get("do_bot_detection", default=False, type=bool)
             config.do_sentiment_analysis = request.form.get("do_sentiment_analysis_field", default=False, type=bool)
 
-            print(request.form)
             print("DATA:")
             print(config.time_step_size)
             print(config.tweetWords)
@@ -557,6 +595,7 @@ def index_api():
             collection_paused = False
             while config.collection_running:
                 time.sleep(0.2)
+            twitter_watcher.calculate_bot_averages()
 
             return "Collection successfully stopped!", 200
 
@@ -622,6 +661,6 @@ def progress():
            + ',"status":"' + str(config.WatcherStatus(config.status).name) + '"}'
 
 
-@app.route('/API/graphml_export')
+@app.route('/API/graphml_export') #TODO make this configurable
 def graphml_export():
-    return twitter_watcher.export_to_graph_ml(edge_kinds=["Retweets"], include_node_info=True, include_edge_info=False)
+    return twitter_watcher.export_to_graph_ml(edge_kinds=["Retweets"], include_node_info=True, include_edge_info=False, include_edge_weights=False)

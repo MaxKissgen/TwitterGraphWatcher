@@ -22,7 +22,10 @@
 
 <form role="form" method="POST" action="/?form=collection-start" enctype="multipart/form-data" novalidate>
     {{ button_form.csrf_token }}
-    <nav class="navbar navbar-expand-lg navbar-light" style="background-color: #435D9A; display:block; height: 70px">
+    <nav class="navbar navbar-expand-lg navbar-light" style="background-color: #435D9A; display:block; height: 120px">
+        <span style="display: row; margin-left:14px; font-size:24px; color: #DCDCDC"><b>Twitter Watcher</b></span>
+        <div style="height:4px; width:200px; background-color: #DCDCDC; margin-bottom: 10px"></div>
+        <div>
         <div style="float: left">
         <!-- <div style="width: 30px"></div>  Logo Placeholder -->
         <div class="navbar-nav mr-auto" style="margin-left:30px">
@@ -35,6 +38,7 @@
             <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#downloadModal">
                 Download Results
             </button>
+        </div>
         </div>
     </nav>
 
@@ -75,9 +79,8 @@
         <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A">
             Collection Timeframe</p>
         <div style="margin-left: 10px">
-            <p style="font-size: 18px; color: #4f8ab5">Specify the date to start collection from and the date to end
-                collection at. You can also specify whether you want to collect all data in bulk or whether it should be
-                done via time steps. If you don't want collection to end unless you manually stop it, flip the <em>No end date</em> sitch.
+            <p style="font-size: 18px; color: #4f8ab5">Specify the date to start collection from and the date to end collection at. <br>
+                If you don't want collection to end unless you manually stop it, flip the <em>No end date</em> switch.
             </p>
             {{ render_field(button_form.no_end_date_field) }}
             <!-- Need to create row manually here to be able to hide both label and input of end_date_field-->
@@ -92,6 +95,10 @@
                         {{ render_field(button_form.end_date_field) }}
                     </div>
                 </div>
+                <p style="font-size: 18px; color: #4f8ab5">You can also specify whether you want to collect all data in bulk or whether it should be
+                done via time steps: Time steps can be important if you want to look at the graph during collection. With no time steps,
+                an intermediate graph would only include some people with all data of the time frame while with time steps there's data for all people for some days/weeks/months. <br>
+                </p>
                 <div class="col-md-2">
                     <div class="col-mb-3">
                         {{ render_field(button_form.steps_field) }}
@@ -105,7 +112,7 @@
         <div style="margin-left: 10px">
             <p style="font-size: 18px; color: #4f8ab5">Decide whether you want to gather the average bot response for
                 tweets, i.e. an average of bot likelihood and maliciousness for the first 100 responders (reply/quote
-                tweet/retweet) of the tweet. The analysis is done via the <a
+                tweet/retweet) of the tweet.<br> The analysis is done via the <a
                         href="https://milki-psy.dbis.rwth-aachen.de/bot-detector/" target="_blank">bot-detector</a> web application.
                 This may increase collection time so use this at your own discretion.</p>
             {{ render_field(button_form.bot_detection_field) }}
@@ -161,34 +168,38 @@
             </div>
             <form role="form" method="POST" action="/?form=download" enctype="multipart/form-data" novalidate>
                 <div class="modal-body">
-                    <p style="font-size: 18px; color: #4f8ab5">Here you have the option to download the fetched graph
-                        (or parts of it) in GraphML format. You can customize which time frame twitter
-                        interactions should be considered. <br>You can also select whether additional information about
-                        nodes and edges such as follower numbers or text of a tweet should be included.</p>
-                    {{ download_form.csrf_token }}
-                    {{ render_field(download_form.file_name_field) }}
-                    {{ render_field(download_form.edge_kinds_retweets_field) }}
-                    {{ render_field(download_form.edge_kinds_quotetweets_field) }}
-                    {{ render_field(download_form.edge_kinds_mentions_field) }}
-                    {{ render_field(download_form.edge_kinds_replies_field) }}
-                    {{ render_field(download_form.edge_kinds_likes_field) }}
-                    <div class="row">
-                        <div class="col-md-5">
-                            <div>
-                                {{ render_field(download_form.start_date_field) }}
+                            <p style="font-size: 18px; color: #4f8ab5">Here you have the option to download the fetched graph
+                                (or parts of it) in GraphML format. You can customize which time frame twitter
+                                interactions should be considered. <br>You can also select whether additional information about
+                                nodes and edges such as follower numbers or text of a tweet should be included.</p>
+                            {{ download_form.csrf_token }}
+                            {{ render_field(download_form.file_name_field) }}
+                            {{ render_field(download_form.involved_nodes_field) }}
+                            <span>Edge Types</span>
+                            <div style="height:10px"></div>
+                            {{ render_field(download_form.edge_kinds_retweets_field) }}
+                            {{ render_field(download_form.edge_kinds_quotetweets_field) }}
+                            {{ render_field(download_form.edge_kinds_mentions_field) }}
+                            {{ render_field(download_form.edge_kinds_replies_field) }}
+                            {{ render_field(download_form.edge_kinds_likes_field) }}
+                            <div class="row">
+                                <div class="col-md-5">
+                                    <div>
+                                        {{ render_field(download_form.start_date_field) }}
+                                    </div>
+                                </div>
+                                <div class="col-md-5">
+                                    <div>
+                                        {{ render_field(download_form.end_date_field) }}
+                                    </div>
+                                </div>
                             </div>
-                        </div>
-                        <div class="col-md-5">
-                            <div>
-                                {{ render_field(download_form.end_date_field) }}
-                            </div>
-                        </div>
-                    </div>
 
-                    {{ render_field(download_form.node_info_field) }}
-                    {{ render_field(download_form.edge_info_field) }}
+                            {{ render_field(download_form.node_info_field) }}
+                            <!-- download_form.edge_info_field, -->
+                            {{ render_form_row([download_form.edge_weight_field]) }}
 
-                </div>
+                        </div>
                 <div class="modal-footer">
                     {{ render_field(download_form.submit_field) }}
                 </div>

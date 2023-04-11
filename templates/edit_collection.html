@@ -20,9 +20,12 @@
         {% from 'bootstrap5/form.html' import render_form, render_field, render_form_row %}
         {% from 'bootstrap5/nav.html' import render_nav_item, render_breadcrumb_item %}
 
-        <form role="form" method="POST" action="/" enctype="multipart/form-data" novalidate>
+        <form role="form" method="POST" action="/?form=collection-edit" enctype="multipart/form-data" novalidate>
             {{ button_form.csrf_token }}
-            <nav class="navbar navbar-expand-lg navbar-light" style="background-color: #435D9A; display:block; height: 92px; padding-top: 10px;">
+            <nav class="navbar navbar-expand-lg navbar-light" style="background-color: #435D9A; display:block; height: 142px; padding-top: 10px;">
+                <span style="display: row; margin-left:14px; font-size:24px; color: #DCDCDC"><b>Twitter Watcher</b></span>
+                <div style="height:4px; width:200px; background-color: #DCDCDC; margin-bottom: 6px"></div>
+                <div>
                 <div style="width: 84%; display:inline-flex; float:left">
                 <div style="width: 30px"></div> <!-- Logo Placeholder -->
                 <div style="width:auto; display: inline-block">
@@ -42,6 +45,10 @@
                 <!-- <div style="width: 10px; display: inline-block"></div>-->
                 <div class="navbar-nav" style="display:inline-flex">
                     <div style="margin-top:12px">
+                    {{ render_field(button_form.submit_field, button_style="success", button_size="lg") }}
+                    </div>
+                    <div style="width: 10px"></div>
+                    <div style="margin-top:12px">
                     {{ render_field(button_form.pause_field, button_style="warning", button_size="lg") }}
                     </div>
                     <div style="width: 10px"></div>
@@ -55,6 +62,7 @@
                         Download Results
                     </button>
                 </div>
+                </div>
             </nav>
 
             <div style="margin: 10px 50px 10px 30px; ">
@@ -63,6 +71,27 @@
                 {{ render_messages(dismissible=True) }}
                 <!-- </div>
                 </div> -->
+                <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Current Filters</p>
+                <div style="margin-left: 10px">
+                    <!-- <p style="font-size: 18px; color: #4f8ab5">Here are the current filters the watcher uses for collection:</p> -->
+                    <div style="display: row; margin-right:20px">
+                        <span style="display: float:left"><b>Filter Keywords:</b></span>
+                        <div id="filterKeyWordsDiv" style="display: row">{{ keywords }}</div>
+                    </div>
+                    <div style="display: row; margin-right:20px">
+                        <span style="display: float:left"><b>Filter Emojis:</b></span>
+                        <div id="filterEmojisDiv" style="display: row">{{ emojis }}</div>
+                    </div>
+                    <div style="display: row; margin-right:20px">
+                        <span style="display: float:left"><b>Filter Hashtags:</b></span>
+                        <div id="filterHashtagsDiv" style="display: row">{{ hashtags }}</div>
+                    </div>
+                    <div style="display: row; margin-right:20px">
+                        <span style="display: float:left"><b>Filter Mentions:</b></span>
+                        <div id="filterMentionsDiv" style="display: row">{{ mentions }}</div>
+                    </div>
+                </div>
+                <div style="height:20px"></div>
                 <p style="font-weight:bold; font-size:large; background-color: #B7BDBA; padding-left: 10px; border-radius: 4px; border-color: #A4A7A6">Edit People</p>
                 <div style="margin-left: 10px">
                     <p style="font-size: 18px; color: #4f8ab5">Add or remove people from the watchlist. For each person a row should look like: <em>Name,WikidataID,TwitterHandle</em></p>
@@ -86,7 +115,6 @@
                 </div>
 
                 <div style="height:20"></div>
-                {{ render_field(button_form.submit_field) }}
             </div>
         </form>
 
@@ -108,8 +136,10 @@
 
                     let progressBar1 = document.getElementById(progressBar1ID)
                     let progressBar2 = document.getElementById(progressBar2ID)
-                    document.getElementById("collection-status").innerText = progress["status"].charAt(0) + progress["status"].slice(1).toLowerCase().replace("_"," ")
+                    document.getElementById("collection-status").innerText = progress["status"].charAt(0) + progress["status"].slice(1).toLowerCase().replaceAll("_"," ")
                     if(progress["status"] === "COLLECTION_FINISHED") {
+                        progressBar1.setAttribute("aria-valuenow", "100");
+                        progressBar1.style["width"] = "100" + "%";
                         progressBar1.style["color"] = "#FFFFFF";
                         progressBar2.style["color"] = "#FFFFFF";
                         progressBar1.innerHTML = "<b>DONE!</b>";
@@ -149,7 +179,7 @@
                         <h5 class="modal-title" id="downloadModalLabel">Download the Graph</h5>
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
-                    <form role="form" method="POST" action="/" enctype="multipart/form-data" novalidate>
+                    <form role="form" method="POST" action="/?form=download" enctype="multipart/form-data" novalidate>
                         <div class="modal-body">
                             <p style="font-size: 18px; color: #4f8ab5">Here you have the option to download the fetched graph
                                 (or parts of it) in GraphML format. You can customize which time frame twitter
@@ -157,6 +187,9 @@
                                 nodes and edges such as follower numbers or text of a tweet should be included.</p>
                             {{ download_form.csrf_token }}
                             {{ render_field(download_form.file_name_field) }}
+                            {{ render_field(download_form.involved_nodes_field) }}
+                            <span>Edge Types</span>
+                            <div style="height:10px"></div>
                             {{ render_field(download_form.edge_kinds_retweets_field) }}
                             {{ render_field(download_form.edge_kinds_quotetweets_field) }}
                             {{ render_field(download_form.edge_kinds_mentions_field) }}
@@ -176,7 +209,8 @@
                             </div>
 
                             {{ render_field(download_form.node_info_field) }}
-                            {{ render_field(download_form.edge_info_field) }}
+                            <!-- download_form.edge_info_field, -->
+                            {{ render_form_row([download_form.edge_weight_field]) }}
 
                         </div>
                         <div class="modal-footer">

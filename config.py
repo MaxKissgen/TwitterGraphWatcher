@@ -10,7 +10,8 @@ class WatcherStatus(Enum):
     CATCHING_UP_KEYWORDS = 2
     CATCHING_UP_PEOPLE = 3
     WAITING_FOR_RATE_LIMIT = 4
-    COLLECTION_FINISHED = 5
+    CALCULATING_BOT_AVERAGES = 5
+    COLLECTION_FINISHED = 6
 
 
 status = 0
@@ -51,18 +52,22 @@ db_process = None
 
 people = pd.DataFrame()
 
-tweetEmojis = ("🇺🇦,🇷🇺").split(",")
-tweetWords = ("Zelenskyy,Zelensky,Zelenski,Putin,Ukrain,Ukraine,Ucrania,Ucraina,Ucraino,Ukrainian,Ukrajina,Russia,"
-              "Russland,Rusland,Rusia,Russa,Russian,Rusk,Ruska,Rusko,ruso,rusa,Donetsk,Isjum,Ucraina,Kyiv,Kiev,"
-              "Moscow,Kramatorsk,Krim,Crimea,Sevastopol,Bakhmut,Cherson,Kherson,Kakhovka,Mariupol,Kharkiv,Asow,Asov,"
-              "Kreml,Kremlin,Western Media,Special Military,Schoigu,Lapin,Kadyrov,Surovikin,Donbass,Donetsk,Luhansk,"
-              "Lugansk,Donbas,Nord Stream,Druschba,Jamal,Jagal,Dugin,Douguin,HIMARS").split(",")
-tweetWordsAmbiguous = ("NATO,Missiles").split(",")
-tweetHashtags = ("#RussiaTerroristState,#RussiaIsATerroristState,#UkraineRussianWar,#Ukraine,#Kyiv,#kyiv,#Russia,"
-                 "#Moscow,#RecoveryofUkraine,#Borodyanka,#Ivankiv,#SlavaUkraini,#SlavaUkraïni,#Kreml,#Kremlin,"
-                 "#ArmUkraineNow,#FreeTheLeopards,#Butscha,#RussianUkrainianWar,#UkraineRussianWar,#RussiaIsLosing,"
-                 "#SpecialMilitaryOperation,#Roscosmos,#Rogozin,#Putin,#Kadyrov,#Chechen,#RussianArmy,#HeroesZ,"
-                 "#Surovikin,#WarCriminalPutin,#UkraineWar,#Donbass,#Donbas,#Donetsk,#Lugansk,#SMO,#Moscow,"
-                 "#UkranianAgony,#sanctions,#NordStream,#NordStreamSabotage,#Russie,#trainingmission").split(",")
-tweetHandles = ("@AndriyYermak,@ZelenskyyUa,@DefenceU,@Denys_Shmyhal,@EmbEspKyiv,@DmytroKuleba,@jensstoltenberg,"
-                "@KremlinRussia_E,@KremlinRussia,@mod_russia,@MelnykAndrij,@Makeiev").split(",")
+tweetEmojis = None #("🇺🇦,🇷🇺").split(",")
+tweetWords = None \
+    # ("Zelenskyy,Zelensky,Zelenski,Putin,Ukrain,Ukraine,Ucrania,Ucraina,Ucraino,Ukrainian,Ukrajina,Russia,"
+    #           "Russland,Rusland,Rusia,Russa,Russian,Rusk,Ruska,Rusko,ruso,rusa,Donetsk,Isjum,Ucraina,Kyiv,Kiev,"
+    #           "Moscow,Kramatorsk,Krim,Crimea,Sevastopol,Bakhmut,Cherson,Kherson,Kakhovka,Mariupol,Kharkiv,Asow,Asov,"
+    #           "Kreml,Kremlin,Western Media,Special Military,Schoigu,Lapin,Kadyrov,Surovikin,Donbass,Donetsk,Luhansk,"
+    #           "Lugansk,Donbas,Nord Stream,Druschba,Jamal,Jagal,Dugin,Douguin,HIMARS").split(",")
+tweetWordsAmbiguous = None \
+    # ("NATO,Missiles").split(",")
+tweetHashtags = None \
+    # ("#RussiaTerroristState,#RussiaIsATerroristState,#UkraineRussianWar,#Ukraine,#Kyiv,#kyiv,#Russia,"
+    #              "#Moscow,#RecoveryofUkraine,#Borodyanka,#Ivankiv,#SlavaUkraini,#SlavaUkraïni,#Kreml,#Kremlin,"
+    #              "#ArmUkraineNow,#FreeTheLeopards,#Butscha,#RussianUkrainianWar,#UkraineRussianWar,#RussiaIsLosing,"
+    #              "#SpecialMilitaryOperation,#Roscosmos,#Rogozin,#Putin,#Kadyrov,#Chechen,#RussianArmy,#HeroesZ,"
+    #              "#Surovikin,#WarCriminalPutin,#UkraineWar,#Donbass,#Donbas,#Donetsk,#Lugansk,#SMO,#Moscow,"
+    #              "#UkranianAgony,#sanctions,#NordStream,#NordStreamSabotage,#Russie,#trainingmission").split(",")
+tweetHandles = None \
+    # ("@AndriyYermak,@ZelenskyyUa,@DefenceU,@Denys_Shmyhal,@EmbEspKyiv,@DmytroKuleba,@jensstoltenberg,"
+    #             "@KremlinRussia_E,@KremlinRussia,@mod_russia,@MelnykAndrij,@Makeiev").split(",")

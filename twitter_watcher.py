@@ -1,5 +1,6 @@
 import threading
 from datetime import datetime, timezone, timedelta
+
 from dateutil.relativedelta import *
 import json
 import re
@@ -21,6 +22,8 @@ import tweepy
 from requests import ReadTimeout
 from urllib3.exceptions import ReadTimeoutError
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
+
+import emoji
 
 import config
 import politician_collection
@@ -194,6 +197,7 @@ def setup_database():
         print("Database was not running. Starting it...")
         global db_process
         #TODO: REMOVE CUSTOM DIRECTORY
+        #"--database.directory", "TestDBFiles",
         db_process = subprocess.Popen([arango_filepath, "--database.directory", "TestDBFiles", "--http.trusted-origin", "*", "--server.endpoint", db_config['database_connection_type'] + "+tcp://" + db_config['database_address'] + ":" + db_config['database_port']])
 
     db_running = False
@@ -554,6 +558,7 @@ def create_tweet_document(tweet_json, references=[], sentiment_value=None, avg_b
 
         if sentiment_value is not None:
             doc["sentiment_value"] = sentiment_value
+            doc["weight"] = sentiment_value
         if is_not_retweet(tweet_json) and avg_botness is not None:
             doc["avg_response_botness"] = avg_botness
             doc["avg_response_bot_maliciousness"] = avg_maliciousness
@@ -620,7 +625,7 @@ def create_tweet_edge(tweet_type, tweet_json, _from_tid, _to_tid, sentiment_valu
             #Include tweet app source as well?
 
             if sentiment_value is not None:
-                doc["sentiment_value"] = sentiment_value
+                doc["weight"] = sentiment_value
             if is_not_retweet(tweet_json) and avg_botness is not None:
                 doc["avg_response_botness"] = avg_botness
                 doc["avg_response_bot_maliciousness"] = avg_maliciousness
@@ -685,7 +690,7 @@ def store_tweet(t_client, tweet_json, sentiment_value=None, avg_botness=None, av
                                   avg_botness, avg_maliciousness, ref_tweet=None)
 
 
-def create_like_document(liked_user_id, liking_user_id, tweet_id):
+def create_like_document(liked_user_id, liking_user_id, tweet_id, tweet_created_at):
     collection = db_connection["TwitterWatcher"]["Likes"]
     try:
         collection.fetchDocument(tweet_id + "_liked_" + liking_user_id + "_" + liked_user_id)
@@ -697,17 +702,18 @@ def create_like_document(liked_user_id, liking_user_id, tweet_id):
         doc._to = "People/" + liked_user_id
 
         doc["tweet_id"] = tweet_id
-        doc["sentiment_value"] = 0.5
+        doc["created_at"] = tweet_created_at
+        doc["weight"] = 0.5
 
         doc.save()
 
 
 # Store edges for people liking others and dump a list of all collected liking users into corresponding tweet doc
-def store_likes(t_id, liking_users_in_db, tweet_id):
+def store_likes(t_id, liking_users_in_db, tweet_id, tweet_created_at):
     liked_user_id = get_id_by_tid_from_database(t_id)
     if liked_user_id is not None:  # TODO: Delete, should not be necessary since tweet author should always exist in db
         for liking_user_id in liking_users_in_db:
-            create_like_document(liked_user_id, liking_user_id, tweet_id)
+            create_like_document(liked_user_id, liking_user_id, tweet_id, tweet_created_at)
     else:
         print("Can't store likes for unknown user")
 
@@ -1053,7 +1059,7 @@ def collect_tweets_by_query(person, t_query, t_client, start_date, end_date, cat
         if is_not_retweet(tweets[index]):  # Retweets can't be liked
             print("Getting likes")
             liking_users_in_db, tweet_liking_users = collect_liking_users(tweets[index]["id"], t_client, page_limit=1)
-            store_likes(tweets[index]["author_id"], liking_users_in_db, tweets[index]["id"])
+            store_likes(tweets[index]["author_id"], liking_users_in_db, tweets[index]["id"], tweets[index]["created_at"])
 
         if config.stop_collection:
             if not catch_up:
@@ -1195,7 +1201,7 @@ def catch_up_new_people(new_people):
                     create_tweet_edge("mentioned", tweet_json, tweet_json["author_id"], person_t_id, sentiment_value,
                                       avg_botness, avg_maliciousness)
                 if tweet_doc["liking_users"] is not None and person_t_id in tweet_doc["liking_users"]:
-                    create_like_document(tweet_json["author_id"], person_t_id, tweet_id)
+                    create_like_document(tweet_json["author_id"], person_t_id, tweet_id, tweet_doc["tweet"]["created_at"])
 
             if config.stop_collection:
                 return
@@ -1243,6 +1249,23 @@ def load_savepoint():
     config.people = pd.read_csv(filepath_or_buffer='savepoint/people.csv')
     if os.path.isfile("./savepoint/added_people.csv"):
         config.added_people = pd.read_csv(filepath_or_buffer='savepoint/added_people.csv')
+
+    # Rebuild filter variables
+    if config.tweetHandles is None or config.tweetHashtags is None or config.tweetEmojis is None or config.tweetWords is None:
+        config.tweetEmojis, config.tweetHashtags, config.tweetWords, config.tweetHandles = [], [], [], []
+
+        for query in queries:
+            query_string_list = str(query).replace("(", "").replace(")","").split(" OR ")
+            for query_filter in query_string_list:
+                if query_filter.startswith("#"):
+                    config.tweetHashtags.append(query_filter)
+                elif query_filter.startswith("@"):
+                    config.tweetHandles.append(query_filter)
+                elif emoji.emoji_count(query_filter) > 0:
+                    config.tweetEmojis.append(query_filter)
+                else:
+                    config.tweetWords.append(query_filter)
+
 
     print("Savepoint loaded...")
     #print(savepoint.person, "\n", savepoint.query, "\n", savepoint.tweets_left, "\n", savepoint.pagination_token, "\n", savepoint.like_pagination, "\n", savepoint.start_date)
@@ -1324,9 +1347,54 @@ def delete_savepoint():
     savepoint.pagination_token = None
 
 
+def calculate_bot_averages():
+    setup_database()
+    config.status = config.WatcherStatus.CALCULATING_BOT_AVERAGES
+
+    key_averages_dict = {}
+    for node_dict in db_connection["TwitterWatcher"]["People"].fetchAll(rawResults=True):
+        key_averages_dict[node_dict["twitter_object"]["id"]] = {"_key": node_dict["_key"], "botness_avg_sum": 0, "maliciousness_avg_sum": 0, "num_tweets": 0}
+
+    for tweet_dict in db_connection["TwitterWatcher"]["Tweets"].fetchAll(rawResults=True):
+        if tweet_dict["tweet"]["author_id"] in key_averages_dict:
+            tweet_id = tweet_dict["tweet"]["author_id"]
+            key_averages_dict[tweet_id]["botness_avg_sum"] += tweet_dict["avg_response_botness"] if "avg_response_botness" in tweet_dict else 0.0
+            key_averages_dict[tweet_id]["maliciousness_avg_sum"] += tweet_dict["avg_response_bot_maliciousness"] if "avg_response_bot_maliciousness" in tweet_dict else 0.0
+            key_averages_dict[tweet_id]["num_tweets"] += 1
+
+    for node_twitter_key in key_averages_dict:
+        try:
+            node_doc = db_connection["TwitterWatcher"]["People"].fetchDocument(key_averages_dict[node_twitter_key]["_key"])
+            if key_averages_dict[node_twitter_key]["num_tweets"] != 0:
+                node_doc["avg_response_botness"] = key_averages_dict[node_twitter_key]["botness_avg_sum"] / key_averages_dict[node_twitter_key]["num_tweets"]
+                node_doc["avg_response_bot_maliciousness"] = key_averages_dict[node_twitter_key]["maliciousness_avg_sum"] / key_averages_dict[node_twitter_key]["num_tweets"]
+            else:
+                node_doc["avg_response_botness"] = 0
+                node_doc["avg_response_bot_maliciousness"] = 0
+            node_doc.save()
+        except pyArangoExceptions.DocumentNotFoundError:
+            print("Could not find person for botness averages. Account Id was", node_twitter_key)
+
+
 def stop_collection_process():
     config.stop_collection = True
     exit_sleep.set()
+
+
+def remove_pre_existing_filters():
+    if config.added_filters is not None:
+        for keyword in config.tweetWords:
+            if keyword in config.added_filters["keywords"]:
+                config.added_filters["keywords"].remove(keyword)
+        for emoji in config.tweetEmojis:
+            if emoji in config.added_filters["emojis"]:
+                config.added_filters["emojis"].remove(emoji)
+        for hashtag in config.tweetHashtags:
+            if hashtag in config.added_filters["hashtags"]:
+                config.added_filters["hashtags"].remove(hashtag)
+        for handles in config.tweetHandles:
+            if handles in config.added_filters["handles"]:
+                config.added_filters["handles"].remove(handles)
 
 
 # TODO: Remove spaces for wikidata object keys?
@@ -1375,6 +1443,8 @@ def collection(use_savepoint=False):
         current_end_date = end_date_incr
     else:
         current_end_date = config.end_date
+
+    print(current_start_date,current_end_date,config.end_date)
 
     end_date_reached = False
     while not end_date_reached:
@@ -1475,6 +1545,8 @@ def collection(use_savepoint=False):
 
         # TODO: Still a bit dumb, refactor so that filters are added to existing queries (or that existing filters must not occur during catchup to not doubly search tweets), maybe also offer possibility of date from when catch up should begin
         # Add new filters
+        # Remove all pre-existing filters
+        remove_pre_existing_filters()
         if config.added_filters is not None and (config.added_filters["emojis"] == [""] and config.added_filters["keywords"] == [""] and config.added_filters["hashtags"] == [""] and config.added_filters["handles"] == [""]):
             config.added_filters = None
         elif config.added_filters is not None:
@@ -1579,9 +1651,11 @@ def collection(use_savepoint=False):
 
             end_date_incr = incr_date_by_timestep(current_end_date, config.time_step_size)
             if config.end_date is not None and end_date_incr.date() > config.end_date.date():
-                current_end_date = config.end_date()
+                current_end_date = config.end_date
             else:
                 current_end_date = end_date_incr
+
+            print(current_end_date)
 
             if current_end_date.date() > datetime.today().date():
                 current_end_date = datetime.today()
@@ -1591,13 +1665,16 @@ def collection(use_savepoint=False):
             print("Reached end date, stopping collection...")
             end_date_reached = True
 
+    calculate_bot_averages()
     config.status = config.WatcherStatus.COLLECTION_FINISHED
 
     stop_database() #TODO: Do this on the website not here
 
 
-def export_to_graph_ml(start_date=None, end_date=None, edge_kinds=None, include_node_info=True, include_edge_info=False):
+def export_to_graph_ml(involved_nodes=None, start_date=None, end_date=None, edge_kinds=None, include_node_info=True, include_edge_info=False, include_edge_weights=False):
     setup_database()
+
+    calculate_bot_averages()
 
     if edge_kinds is None:
         edge_kinds = ["Follows", "Likes", "Mentions", "Retweets", "QuoteTweets", "Replies"]
@@ -1614,24 +1691,40 @@ def export_to_graph_ml(start_date=None, end_date=None, edge_kinds=None, include_
                             "xmlns:xsi": "http://www.w3.org/2001/XMLSchema-instance",
                             "xsi:schemaLocation": "http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd"
                         })
-    ET.SubElement(doc, "key", {"id": "nodeData", "for": "node", "attr.name": "nodeData", "attr.type": "string"})
+    if include_node_info:                    
+        ET.SubElement(doc, "key", {"id": "nodeData", "for": "node", "attr.name": "nodeData", "attr.type": "string"})
+    ET.SubElement(doc, "key", {"id": "label", "for": "node", "attr.name": "label", "attr.type": "string"})
     ET.SubElement(doc, "key", {"id": "edgeKind", "for": "edge", "attr.name": "edgeKind", "attr.type": "string"})
-    ET.SubElement(doc, "key", {"id": "edgeData", "for": "edge", "attr.name": "edgeData", "attr.type": "string"})
+    if include_edge_info:
+        ET.SubElement(doc, "key", {"id": "edgeData", "for": "edge", "attr.name": "edgeData", "attr.type": "string"})
+    if include_edge_weights:
+        ET.SubElement(doc, "key", {"id": "weight", "for": "edge", "attr.name": "weight", "attr.type": "double"})
     graph_elem = ET.SubElement(doc, "graph", {"id": "twitter-watcher-graph", "edgedefault": "directed"})
 
     for node_dict in db_connection["TwitterWatcher"]["People"].fetchAll(rawResults=True):
+        if involved_nodes is None or (node_dict["_key"] not in involved_nodes):
+            continue
+
         node_elem = ET.SubElement(graph_elem, "node", {"id": node_dict["_key"]})
         if include_node_info:
-            node_dict.pop('_key', None)
+            # Add the name as a label if given
+            if "wikidata_object" in node_dict and "name" in node_dict["wikidata_object"]:
+                node_elem_data = ET.SubElement(node_elem, "data", {"key": "label"})
+                node_elem_data.text = node_dict["wikidata_object"]["name"]
+
+            node_dict["Id"] = node_dict.pop('_key', None)
             node_dict.pop('_rev', None)
             node_dict.pop('_id', None)
             node_info_xml_conform = json.dumps(node_dict)
-            node_info_xml_conform = node_info_xml_conform.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&apos;").replace("\"", "&quot;")
+            #node_info_xml_conform = node_info_xml_conform.replace("<", "&lt;").replace(">", "&gt;").replace("'", "&apos;").replace("\"", "&quot;")
+            #node_info_xml_conform = re.sub("&(?!amp;|lt;|gt;|apos;|quot;)", "&amp;", node_info_xml_conform)
             node_elem_data = ET.SubElement(node_elem, "data", {"key": "nodeData"})
             node_elem_data.text = node_info_xml_conform
 
     for edge_kind in edge_kinds:
         for edge_dict in db_connection["TwitterWatcher"][edge_kind].fetchAll(rawResults=True):
+            if involved_nodes is None or edge_dict["_from"].removeprefix("People/") not in involved_nodes or edge_dict["_to"].removeprefix("People/") not in involved_nodes:
+                continue
             # Only process edges in timeframe
             edge_date = datetime.fromisoformat(edge_dict["created_at"].replace("Z", "+00:00")) if edge_dict.get("created_at") is not None else None
             if edge_date is None or (start_date.date() <= edge_date.date() <= end_date.date()):
@@ -1645,8 +1738,13 @@ def export_to_graph_ml(start_date=None, end_date=None, edge_kinds=None, include_
                     edge_dict.pop('_id', None)
                     edge_dict.pop('_from', None)
                     edge_dict.pop('_to', None)
+                    if include_edge_weights:
+                        edge_weight = edge_dict.pop('weight', 0.0)
+                        edge_elem_data = ET.SubElement(edge_elem, "data", {"key": "weight"})
+                        edge_elem_data.text = str(edge_weight)
                     edge_info_xml_conform = json.dumps(edge_dict)
-                    edge_info_xml_conform = edge_info_xml_conform.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'","&apos;").replace("\"", "&quot;")
+                    #edge_info_xml_conform = edge_info_xml_conform.replace("<", "&lt;").replace(">", "&gt;").replace("'", "&apos;").replace("\"", "&quot;")
+                    #edge_info_xml_conform = re.sub("&(?!amp;|lt;|gt;|apos;|quot;)", "&amp;", edge_info_xml_conform)
                     edge_elem_data = ET.SubElement(edge_elem, "data", {"key": "edgeData"})
                     edge_elem_data.text = edge_info_xml_conform
 
