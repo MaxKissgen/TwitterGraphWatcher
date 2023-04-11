@@ -165,8 +165,6 @@ def setup_database():
     if len(db_config) == 0:
         raise ValueError("database config empty/not found")
 
-    print("USING TEST PORT")
-    db_config['database_port'] = "8531"  # TODO: REMOVE THIS PORT, THIS IS FOR TESTING
 
     arango_url = db_config['database_connection_type'] + "://" + db_config['database_address'] + ":" + db_config['database_port']
     username = db_config['username']
@@ -198,7 +196,7 @@ def setup_database():
         global db_process
         #TODO: REMOVE CUSTOM DIRECTORY
         #"--database.directory", "TestDBFiles",
-        db_process = subprocess.Popen([arango_filepath, "--database.directory", "TestDBFiles", "--http.trusted-origin", "*", "--server.endpoint", db_config['database_connection_type'] + "+tcp://" + db_config['database_address'] + ":" + db_config['database_port']])
+        db_process = subprocess.Popen([arango_filepath, "--http.trusted-origin", "*", "--server.endpoint", db_config['database_connection_type'] + "+tcp://" + db_config['database_address'] + ":" + db_config['database_port']])
 
     db_running = False
     while not db_running:  # Wait for the db to start
@@ -231,8 +229,6 @@ def setup_database():
         database.createCollection(className="Edges", name="Mentions", allowUserKeys=True)
     if not db_connection["TwitterWatcher"].hasCollection("Likes"):
         database.createCollection(className="Edges", name="Likes", allowUserKeys=True)
-    if not db_connection["TwitterWatcher"].hasCollection("Follows"):  # Check if I'm actually doing this
-        database.createCollection(className="Edges", name="Follows", allowUserKeys=True)
     if not db_connection["TwitterWatcher"].hasCollection("UserBotDetectionValues"):  # Check if I'm actually doing this
         database.createCollection(className="Collection", name="UserBotDetectionValues", allowUserKeys=True)
 
