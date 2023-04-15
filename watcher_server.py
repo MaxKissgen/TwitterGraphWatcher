@@ -359,6 +359,8 @@ def index():
                     print(config.people)
                     print(config.start_date)
                     print(config.end_date)
+                    print(config.do_bot_detection)
+                    print(config.do_sentiment_analysis)
 
                     button_form.start_field.render_kw = {}
                     button_form.submit_field.render_kw = {"value": "Edit Parameters"}
@@ -373,6 +375,11 @@ def index():
 
     elif request.args.get("form") is None or request.args.get("form") == "collection-edit":  # TODO: Check if collection has stopped unintentionally and, if so, why and output to the user
         button_form = EditCollectionParametersForm()
+
+        # Manually update bot detection and sentiment analysis fields cause defaults get set only once
+        button_form.bot_detection_field.data = config.do_bot_detection
+        button_form.sentiment_analysis_field.data = config.do_sentiment_analysis
+
         if not collection_paused or config.collection_running:
             button_form.submit_field.render_kw = {"disabled": "disabled"}
         elif collection_paused:
