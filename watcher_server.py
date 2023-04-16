@@ -43,7 +43,7 @@ class StartCollectionParametersForm(FlaskForm):
 
     filter_words_field = StringField('Filter Keywords', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     filter_emojis_field = StringField('Filter Emojis', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
-    filter_hashtags_field = StringField('Filter Hashtags', validators=[Regexp('^(((#[^@#,]+),)*#[^@#,]+){0,1}$')])
+    filter_hashtags_field = StringField('Filter Hashtags', validators=[Regexp('^(((#[^@#,]+),(\s{1}))*#[^@#,]+){0,1}$')])
     filter_mentions_field = StringField('Filter Mentions', validators=[Regexp('^(((@[^@#,]+),)*@[^@#,]+){0,1}$')])
 
     start_date_field = DateField(format=["%Y-%m-%d"])
@@ -78,12 +78,12 @@ class EditCollectionParametersForm(FlaskForm):
 
     add_words_field = StringField('Add Filter Keywords', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     add_emojis_field = StringField('Add Filter Emojis', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
-    add_hashtags_field = StringField('Add Filter Hashtags', validators=[Regexp('^(((#[^@#,]+),)*#[^@#,]+){0,1}$')])
+    add_hashtags_field = StringField('Add Filter Hashtags', validators=[Regexp('^(((#[^@#,]+),(\s{1}))*#[^@#,]+){0,1}$')])
     add_mentions_field = StringField('Add Filter Mentions', validators=[Regexp('^(((@[^@#,]+),)*@[^@#,]+){0,1}$')])
     remove_words_field = StringField('Remove Filter Keywords', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     remove_emojis_field = StringField('Remove Filter Emojis', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     remove_hashtags_field = StringField('Remove Filter Hashtags',
-                                        validators=[Regexp('^(((#[^@#,]+),)*#[^@#,]+){0,1}$')])
+                                        validators=[Regexp('^(((#[^@#,]+),(\s{1}))*#[^@#,]+){0,1}$')])
     remove_mentions_field = StringField('Remove Filter Mentions',
                                         validators=[Regexp('^(((@[^@#,]+),)*@[^@#,]+){0,1}$')])
 
@@ -204,7 +204,7 @@ def index():
             edge_kinds.append("Likes")
 
         involved_nodes = None
-        if download_form.involved_nodes_field.data is not None:
+        if download_form.involved_nodes_field.data is not None and download_form.involved_nodes_field.data != "":
             involved_nodes_list = download_form.involved_nodes_field.data.split(",")
             involved_nodes = {}
             for nodeId in involved_nodes_list:
@@ -292,10 +292,10 @@ def index():
                             button_form=button_form
                         )
 
-                    config.tweetWords = button_form.filter_words_field.data.split(",")
-                    config.tweetEmojis = button_form.filter_emojis_field.data.split(",")
-                    config.tweetHashtags = button_form.filter_hashtags_field.data.split(",")
-                    config.tweetHandles = button_form.filter_mentions_field.data.split(",")
+                    config.tweetWords = button_form.filter_words_field.data.replace(", ",",").split(",")
+                    config.tweetEmojis = button_form.filter_emojis_field.data.replace(", ",",").split(",")
+                    config.tweetHashtags = button_form.filter_hashtags_field.data.replace(", ",",").split(",")
+                    config.tweetHandles = button_form.filter_mentions_field.data.replace(", ",",").split(",")
 
                     try:
                         config.people = read_file_data(button_form.people_field.data)#,
@@ -374,11 +374,8 @@ def index():
         )
 
     elif request.args.get("form") is None or request.args.get("form") == "collection-edit":  # TODO: Check if collection has stopped unintentionally and, if so, why and output to the user
-        button_form = EditCollectionParametersForm()
-
-        # Manually update bot detection and sentiment analysis fields cause defaults get set only once
-        button_form.bot_detection_field.data = config.do_bot_detection
-        button_form.sentiment_analysis_field.data = config.do_sentiment_analysis
+        print(config.do_bot_detection,config.do_sentiment_analysis)
+        button_form = EditCollectionParametersForm(bot_detection_field=config.do_bot_detection, sentiment_analysis_field=config.do_sentiment_analysis)
 
         if not collection_paused or config.collection_running:
             button_form.submit_field.render_kw = {"disabled": "disabled"}
@@ -422,15 +419,15 @@ def index():
                             or button_form.add_words_field.data != "" \
                             or button_form.add_hashtags_field.data != "" \
                             or button_form.add_mentions_field.data != "":
-                        config.added_filters = {"emojis": button_form.add_emojis_field.data.split(","),
-                                                "keywords": button_form.add_words_field.data.split(","),
-                                                "hashtags": button_form.add_hashtags_field.data.split(","),
-                                                "handles": button_form.add_mentions_field.data.split(",")}
+                        config.added_filters = {"emojis": button_form.add_emojis_field.data.replace(", ",",").split(","),
+                                                "keywords": button_form.add_words_field.data.replace(", ",",").split(","),
+                                                "hashtags": button_form.add_hashtags_field.data.replace(", ",",").split(","),
+                                                "handles": button_form.add_mentions_field.data.replace(", ",",").split(",")}
 
-                    config.removed_filters = {"emojis": button_form.remove_emojis_field.data.split(","),
-                                              "keywords": button_form.remove_words_field.data.split(","),
-                                              "hashtags": button_form.remove_hashtags_field.data.split(","),
-                                              "handles": button_form.remove_mentions_field.data.split(",")}
+                    config.removed_filters = {"emojis": button_form.remove_emojis_field.data.replace(", ",",").split(","),
+                                              "keywords": button_form.remove_words_field.data.replace(", ",",").split(","),
+                                              "hashtags": button_form.remove_hashtags_field.data.replace(", ",",").split(","),
+                                              "handles": button_form.remove_mentions_field.data.replace(", ",",").split(",")}
 
                     try:
                         if button_form.add_people_field.data is not None:
@@ -454,6 +451,8 @@ def index():
                             mentions=str(config.tweetHandles).replace("[", "").replace("]", "").replace("'","")
                         )
 
+                    print("BOTFIELD",button_form.bot_detection_field.data)
+                    print("SENTIFIELD",button_form.sentiment_analysis_field.data)
                     config.do_bot_detection = button_form.bot_detection_field.data
                     config.do_sentiment_analysis = button_form.sentiment_analysis_field.data
 
@@ -463,6 +462,8 @@ def index():
                     print(config.tweetHashtags)
                     print(config.tweetHandles)
                     print(config.people)
+                    print(config.do_bot_detection)
+                    print(config.do_sentiment_analysis)
 
                     #button_form.submit_field.render_kw = {"value": "Edit Changes"}
 
@@ -481,17 +482,47 @@ def index():
 
                     flash("Changes successfully applied!", "success")
 
-                    button_form = EditCollectionParametersForm(formdata=None)
+                    button_form = EditCollectionParametersForm(formdata=None, bot_detection_field=config.do_bot_detection, do_sentiment_analysis=config.do_sentiment_analysis)
+
                     button_form.submit_field.render_kw = {"disabled": "disabled"}
+
+                    # Prematurely add filters to displayed lists here
+                    tweet_words_displayed = list(config.tweetWords)
+                    if config.tweetWords is not None:
+                        if config.added_filters is not None:
+                            tweet_words_displayed.extend(config.added_filters["keywords"])
+                        tweet_words_displayed = [item for item in tweet_words_displayed if
+                                                 item not in config.removed_filters["keywords"]]
+
+                    tweet_hashtags_displayed = list(config.tweetHashtags)
+                    if config.tweetHashtags is not None:
+                        if config.added_filters is not None:
+                            tweet_hashtags_displayed.extend(config.added_filters["hashtags"])
+                        tweet_hashtags_displayed = [item for item in tweet_hashtags_displayed if
+                                                    item not in config.removed_filters["hashtags"]]
+
+                    tweet_emojis_displayed = list(config.tweetEmojis)
+                    if config.tweetEmojis is not None:
+                        if config.added_filters is not None:
+                            tweet_emojis_displayed.extend(config.added_filters["emojis"])
+                        tweet_emojis_displayed = [item for item in tweet_emojis_displayed if
+                                                  item not in config.removed_filters["emojis"]]
+
+                    tweet_mentions_displayed = list(config.tweetHandles)
+                    if config.tweetHandles is not None:
+                        if config.added_filters is not None:
+                            tweet_mentions_displayed.extend(config.added_filters["handles"])
+                        tweet_mentions_displayed = [item for item in tweet_mentions_displayed if
+                                                    item not in config.removed_filters["handles"]]
 
                     return render_template(
                         'edit_collection.html',
                         download_form=DownloadForm(),
                         button_form=button_form,
-                        keywords=str(config.tweetWords).replace("[","").replace("]","").replace("'",""),
-                        emojis=str(config.tweetEmojis).replace("[","").replace("]","").replace("'",""),
-                        hashtags=str(config.tweetHashtags).replace("[","").replace("]","").replace("'",""),
-                        mentions=str(config.tweetHandles).replace("[","").replace("]","").replace("'","")
+                        keywords=str(tweet_words_displayed).replace("[","").replace("]","").replace("'",""),
+                        emojis=str(tweet_emojis_displayed).replace("[","").replace("]","").replace("'",""),
+                        hashtags=str(tweet_hashtags_displayed).replace("[","").replace("]","").replace("'",""),
+                        mentions=str(tweet_mentions_displayed).replace("[","").replace("]","").replace("'","")
                     )
 
         return render_template(
