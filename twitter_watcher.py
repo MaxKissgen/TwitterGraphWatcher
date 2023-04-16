@@ -1698,7 +1698,7 @@ def export_to_graph_ml(involved_nodes=None, start_date=None, end_date=None, edge
     graph_elem = ET.SubElement(doc, "graph", {"id": "twitter-watcher-graph", "edgedefault": "directed"})
 
     for node_dict in db_connection["TwitterWatcher"]["People"].fetchAll(rawResults=True):
-        if involved_nodes is not None and (node_dict["_key"] not in involved_nodes):
+        if involved_nodes and (node_dict["_key"] not in involved_nodes):
             continue
 
         node_elem = ET.SubElement(graph_elem, "node", {"id": node_dict["_key"]})
@@ -1719,7 +1719,7 @@ def export_to_graph_ml(involved_nodes=None, start_date=None, end_date=None, edge
 
     for edge_kind in edge_kinds:
         for edge_dict in db_connection["TwitterWatcher"][edge_kind].fetchAll(rawResults=True):
-            if involved_nodes is None or edge_dict["_from"].removeprefix("People/") not in involved_nodes or edge_dict["_to"].removeprefix("People/") not in involved_nodes:
+            if involved_nodes and (edge_dict["_from"].removeprefix("People/") not in involved_nodes or edge_dict["_to"].removeprefix("People/") not in involved_nodes):
                 continue
             # Only process edges in timeframe
             edge_date = datetime.fromisoformat(edge_dict["created_at"].replace("Z", "+00:00")) if edge_dict.get("created_at") is not None else None
