@@ -43,7 +43,7 @@ class StartCollectionParametersForm(FlaskForm):
 
     filter_words_field = StringField('Filter Keywords', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     filter_emojis_field = StringField('Filter Emojis', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
-    filter_hashtags_field = StringField('Filter Hashtags', validators=[Regexp('^(((#[^@#,]+),(\s{1}))*#[^@#,]+){0,1}$')])
+    filter_hashtags_field = StringField('Filter Hashtags', validators=[Regexp('^(((#[^@#,]+),(\s{1})?)*#[^@#,]+){0,1}$')])
     filter_mentions_field = StringField('Filter Mentions', validators=[Regexp('^(((@[^@#,]+),)*@[^@#,]+){0,1}$')])
 
     start_date_field = DateField(format=["%Y-%m-%d"])
@@ -78,12 +78,12 @@ class EditCollectionParametersForm(FlaskForm):
 
     add_words_field = StringField('Add Filter Keywords', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     add_emojis_field = StringField('Add Filter Emojis', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
-    add_hashtags_field = StringField('Add Filter Hashtags', validators=[Regexp('^(((#[^@#,]+),(\s{1}))*#[^@#,]+){0,1}$')])
+    add_hashtags_field = StringField('Add Filter Hashtags', validators=[Regexp('^(((#[^@#,]+),(\s{1})?)*#[^@#,]+){0,1}$')])
     add_mentions_field = StringField('Add Filter Mentions', validators=[Regexp('^(((@[^@#,]+),)*@[^@#,]+){0,1}$')])
     remove_words_field = StringField('Remove Filter Keywords', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     remove_emojis_field = StringField('Remove Filter Emojis', validators=[Regexp('^(([^@#,]+,)*[^@#,]+){0,1}$')])
     remove_hashtags_field = StringField('Remove Filter Hashtags',
-                                        validators=[Regexp('^(((#[^@#,]+),(\s{1}))*#[^@#,]+){0,1}$')])
+                                        validators=[Regexp('^(((#[^@#,]+),(\s{1})?)*#[^@#,]+){0,1}$')])
     remove_mentions_field = StringField('Remove Filter Mentions',
                                         validators=[Regexp('^(((@[^@#,]+),)*@[^@#,]+){0,1}$')])
 
