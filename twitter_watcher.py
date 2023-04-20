@@ -29,7 +29,7 @@ import config
 import politician_collection
 
 #TODO: Integrate date to do catch up from
-catch_up_date = datetime(2022, 10, 16)
+#catch_up_date = datetime(2022, 10, 16)
 
 db_connection = None
 db_process = None
@@ -670,7 +670,7 @@ def store_tweet(t_client, tweet_json, sentiment_value=None, avg_botness=None, av
     if tweet_json.get("entities") is not None and tweet_json["entities"].get("mentions") is not None:
         for mention in tweet_json["entities"]["mentions"]:
             # If this tweet is not a retweet, retweets don't have text and with that no mentions
-            if not is_not_retweet(tweet_json):
+            if is_not_retweet(tweet_json):
 
                 # If this tweet is a reply, all users in the conversation exist as mentions
                 # We then need to ignore the first mentioned person since this is the one that was replied to
