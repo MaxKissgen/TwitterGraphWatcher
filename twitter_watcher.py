@@ -592,35 +592,39 @@ def create_tweet_edge(tweet_type, tweet_json, _from_tid, _to_tid, sentiment_valu
             doc._from = "People/" + _from
             doc._to = "People/" + _to
 
-            doc["tweet_id"] = tweet_json["id"]
-            doc["text"] = tweet_json["text"]
-            doc["created_at"] = tweet_json["created_at"]
-            doc["author_id"] = tweet_json["author_id"]
-            doc["edit_history_tweet_ids"] = tweet_json["edit_history_tweet_ids"]
+            doc["twitter_object"] = {}
+
+            doc["twitter_object"]["tweet_id"] = tweet_json["id"]
+            doc["twitter_object"]["text"] = tweet_json["text"]
+            doc["point_in_time"] = tweet_json["created_at"]
+            doc["twitter_object"]["author_id"] = tweet_json["author_id"]
+            doc["twitter_object"]["edit_history_tweet_ids"] = tweet_json["edit_history_tweet_ids"]
             if tweet_json.get("geo") is not None:
-                doc["place_id"] = tweet_json["geo"]["place_id"]
+                doc["twitter_object"]["geo"] = {}
+                doc["twitter_object"]["geo"]["place_id"] = tweet_json["geo"]["place_id"]
 
             if ref_tweet is not None:  # If we don't reference any tweet, happens when we mention someone
-                doc["referenced_tweet_id"] = ref_tweet["id"]
+                doc["twitter_object"]["referenced_tweet_id"] = ref_tweet["id"]
 
-            if tweet_json.get("entities") is not None:  # Check if there even are hashtags/urls in the text
-                if tweet_json["entities"].get("urls") is not None:
-                    doc["urls"] = tweet_json["entities"]["urls"]
-                if tweet_json["entities"].get("hashtags") is not None:
-                    doc["hashtags"] = tweet_json["entities"]["hashtags"]
+            #if tweet_json.get("entities") is not None:  # Check if there even are hashtags/urls in the text
+            #    if tweet_json["entities"].get("urls") is not None:
+            #        doc["urls"] = tweet_json["entities"]["urls"]
+            #    if tweet_json["entities"].get("hashtags") is not None:
+            #        doc["hashtags"] = tweet_json["entities"]["hashtags"]
             if tweet_json.get("withheld") is not None:
-                doc["withheld"] = {}
+                doc["twitter_object"]["withheld"] = {}
                 if tweet_json["withheld"].get("country_codes") is not None:
-                    doc["withheld"]["country_codes"] = tweet_json["withheld"]["country_codes"]
+                    doc["twitter_object"]["withheld"]["country_codes"] = tweet_json["withheld"]["country_codes"]
                 if tweet_json["withheld"].get("scope") is not None:
-                    doc["withheld"]["scope"] = tweet_json["withheld"]["scope"]
+                    doc["twitter_object"]["withheld"]["scope"] = tweet_json["withheld"]["scope"]
 
-            doc["public_metrics"] = tweet_json["public_metrics"]
-            doc["possibly_sensitive"] = tweet_json["possibly_sensitive"]
-            doc["lang"] = tweet_json["lang"]
+            doc["twitter_object"]["public_metrics"] = tweet_json["public_metrics"]
+            doc["twitter_object"]["possibly_sensitive"] = tweet_json["possibly_sensitive"]
+            doc["twitter_object"]["lang"] = tweet_json["lang"]
             #Include tweet app source as well?
 
             if sentiment_value is not None:
+                doc["sentiment_value"] = sentiment_value
                 doc["weight"] = sentiment_value
             if is_not_retweet(tweet_json) and avg_botness is not None:
                 doc["avg_response_botness"] = avg_botness
@@ -698,7 +702,7 @@ def create_like_document(liked_user_id, liking_user_id, tweet_id, tweet_created_
         doc._to = "People/" + liked_user_id
 
         doc["tweet_id"] = tweet_id
-        doc["created_at"] = tweet_created_at
+        doc["point_in_time"] = tweet_created_at
         doc["weight"] = 0.5
 
         doc.save()
@@ -824,7 +828,7 @@ def get_tweet_sentiment_value(tweet_json):
 
 def get_bot_response(user_list):
     if user_list is None and config.stop_collection:
-        return None
+        return None, None
 
     bot_detection_db = db_connection["TwitterWatcher"]["UserBotDetectionValues"]
 
@@ -1108,9 +1112,9 @@ def check_input(input_people):
 def reset_index_and_update_savepoint_person():
     global people, savepoint
 
-    people.reset_index(inplace=True) # Reorder indexes
+    people.reset_index(inplace=True)  # Reorder indexes
 
-    if savepoint.person is not None: # Assign the new index to the current person
+    if savepoint.person is not None:  # Assign the new index to the current person
         savepoint_person_old_index = savepoint.person[0]
         savepoint_person_new_index = people.loc[people['index'] == savepoint_person_old_index].index.values.astype(int)[0]
         savepoint.person = (savepoint_person_new_index, savepoint.person[1], savepoint.person[2], savepoint.person[3])
@@ -1377,6 +1381,7 @@ def stop_collection_process():
     exit_sleep.set()
 
 
+# TODO: Better Name
 def remove_pre_existing_filters():
     if config.added_filters is not None:
         for keyword in config.tweetWords:
@@ -1398,7 +1403,7 @@ def collection(use_savepoint=False):
     global people, queries, current_person_people_collection, current_person, collecting_people, \
            current_start_date, current_end_date, savepoint
 
-    setup_database()  # TODO: Start this up on website ini, not on collection ini
+    setup_database()  # TODO: Start this up on website ini, not on collection ini?
 
     t_client = tweepy.Client(bearer_token=config.bearer, return_type=tweepy.Response, wait_on_rate_limit=False)
 
@@ -1486,6 +1491,11 @@ def collection(use_savepoint=False):
                 people = pd.concat([people, added_people_trimmed], ignore_index=True) # Add remaining new people
                 config.added_people = None
 
+                for new_person in added_people_trimmed.itertuples(name=None, index=True):
+                    for query in queries:
+                        collect_tweets_by_query(new_person, query, t_client, start_date=config.start_date,
+                                                end_date=current_end_date)
+
         # Remove People, they will not be considered in the next collection step TODO: Also react to stop_collection here? Would be difficult and removing usually doesnt take ages
         if config.removed_people is not None:
             #print("SHAPE: " + str(people.shape)) #TODO: Remove
@@ -1550,7 +1560,7 @@ def collection(use_savepoint=False):
             config.status = config.WatcherStatus.CATCHING_UP_KEYWORDS
 
             catch_up_queries = build_queries(config.added_filters["emojis"], config.added_filters["keywords"], config.added_filters["hashtags"], config.added_filters["handles"])
-            if savepoint.person is not None: # and current_start_date.date() != config.start_date.date():
+            if savepoint.person is not None:  # and current_start_date.date() != config.start_date.date():
                 for person in people.itertuples(name=None, index=True):
                     for catchup_query in catch_up_queries:
                         collect_tweets_by_query(person, catchup_query, t_client, catch_up=True, start_date=config.start_date, end_date=current_end_date) #TODO: make catch_up date settable
@@ -1722,7 +1732,7 @@ def export_to_graph_ml(involved_nodes=None, start_date=None, end_date=None, edge
             if involved_nodes and (edge_dict["_from"].removeprefix("People/") not in involved_nodes or edge_dict["_to"].removeprefix("People/") not in involved_nodes):
                 continue
             # Only process edges in timeframe
-            edge_date = datetime.fromisoformat(edge_dict["created_at"].replace("Z", "+00:00")) if edge_dict.get("created_at") is not None else None
+            edge_date = datetime.fromisoformat(edge_dict["point_in_time"].replace("Z", "+00:00")) if edge_dict.get("point_in_time") is not None else None
             if edge_date is None or (start_date.date() <= edge_date.date() <= end_date.date()):
                 edge_elem = ET.SubElement(graph_elem, "edge", {"id": edge_dict["_key"], "source": edge_dict["_from"].removeprefix("People/"), "target": edge_dict["_to"].removeprefix("People/")})
                 if include_edge_info:
