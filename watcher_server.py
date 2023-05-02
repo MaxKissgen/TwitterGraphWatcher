@@ -17,6 +17,7 @@ from flask import render_template
 
 from datetime import datetime
 import pandas as pd
+import emoji
 
 import twitter_watcher
 import config
@@ -148,6 +149,17 @@ def read_file_data(file_data):
 
     data.drop_duplicates(inplace=True, ignore_index=True)
     return data
+
+
+def translate_emojis(emoji_list):
+    for index, emote in enumerate(emoji_list):
+        if not emoji.is_emoji(emote):
+            try:
+                emoji_list[index] = emoji.emojize(emote)
+            except:
+                raise Exception(emote, "is not an emoji!")
+
+    return emoji_list
 
 
 def set_bearer_token(get_from_file=True, value=""):
@@ -292,12 +304,13 @@ def index():
                             button_form=button_form
                         )
 
-                    config.tweetWords = button_form.filter_words_field.data.replace(", ",",").split(",")
-                    config.tweetEmojis = button_form.filter_emojis_field.data.replace(", ",",").split(",")
-                    config.tweetHashtags = button_form.filter_hashtags_field.data.replace(", ",",").split(",")
-                    config.tweetHandles = button_form.filter_mentions_field.data.replace(", ",",").split(",")
-
                     try:
+                        config.tweetWords = button_form.filter_words_field.data.replace(", ",",").split(",")
+                        emoji_list = button_form.filter_emojis_field.data.replace(", ", ",").split(",")
+                        config.tweetEmojis = [] if emoji_list == [""] else translate_emojis(emoji_list)
+                        config.tweetHashtags = button_form.filter_hashtags_field.data.replace(", ",",").split(",")
+                        config.tweetHandles = button_form.filter_mentions_field.data.replace(", ",",").split(",")
+
                         config.people = read_file_data(button_form.people_field.data)#,
                                                        #button_form.people_separator_field.data)
 
@@ -305,7 +318,7 @@ def index():
                     except Exception as e:
                         button_form.submit_field.render_kw = {}
                         button_form.start_field.render_kw = {'disabled': 'disabled'}
-                        flash("Error while reading file:    '" + str(e) + "'", "error")
+                        flash("Error:    '" + str(e) + "'", "error")
                         return render_template(
                             'start_collection.html',
                             download_form=DownloadForm(),
@@ -415,21 +428,24 @@ def index():
                 if button_form.submit_field.data:
                     button_form.submit_field.render_kw = {'disabled': 'disabled'}
 
-                    if button_form.add_emojis_field.data != "" \
-                            or button_form.add_words_field.data != "" \
-                            or button_form.add_hashtags_field.data != "" \
-                            or button_form.add_mentions_field.data != "":
-                        config.added_filters = {"emojis": button_form.add_emojis_field.data.replace(", ",",").split(","),
-                                                "keywords": button_form.add_words_field.data.replace(", ",",").split(","),
-                                                "hashtags": button_form.add_hashtags_field.data.replace(", ",",").split(","),
-                                                "handles": button_form.add_mentions_field.data.replace(", ",",").split(",")}
-
-                    config.removed_filters = {"emojis": button_form.remove_emojis_field.data.replace(", ",",").split(","),
-                                              "keywords": button_form.remove_words_field.data.replace(", ",",").split(","),
-                                              "hashtags": button_form.remove_hashtags_field.data.replace(", ",",").split(","),
-                                              "handles": button_form.remove_mentions_field.data.replace(", ",",").split(",")}
-
                     try:
+                        if button_form.add_emojis_field.data != "" \
+                                or button_form.add_words_field.data != "" \
+                                or button_form.add_hashtags_field.data != "" \
+                                or button_form.add_mentions_field.data != "":
+                            emoji_list = button_form.add_emojis_field.data.replace(", ", ",").split(",")
+                            config.added_filters = {"emojis": [] if emoji_list == [""] else translate_emojis(emoji_list),
+                                                    "keywords": button_form.add_words_field.data.replace(", ",",").split(","),
+                                                    "hashtags": button_form.add_hashtags_field.data.replace(", ",",").split(","),
+                                                    "handles": button_form.add_mentions_field.data.replace(", ",",").split(",")}
+
+                        emoji_list = button_form.remove_emojis_field.data.replace(", ", ",").split(",")
+                        config.removed_filters = {"emojis": [] if emoji_list == [""] else translate_emojis(emoji_list),
+                                                  "keywords": button_form.remove_words_field.data.replace(", ",",").split(","),
+                                                  "hashtags": button_form.remove_hashtags_field.data.replace(", ",",").split(","),
+                                                  "handles": button_form.remove_mentions_field.data.replace(", ",",").split(",")}
+
+
                         if button_form.add_people_field.data is not None:
                             config.added_people = read_file_data(button_form.add_people_field.data)#,
                                                                  #button_form.add_people_separator_field.data)
@@ -440,7 +456,7 @@ def index():
                             twitter_watcher.check_input(config.removed_people)
                     except Exception as e:
                         button_form.submit_field.render_kw = {}
-                        flash("Error while reading file:    '" + str(e) + "'")
+                        flash("Error:    '" + str(e) + "'")
                         return render_template(
                             'edit_collection.html',
                             download_form=DownloadForm(),
