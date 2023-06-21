@@ -233,11 +233,12 @@ def setup_database():
         database.createCollection(className="Collection", name="UserBotDetectionValues", allowUserKeys=True)
 
 
+#TODO: Refactor method
 # Stops the database (if it was started by the watcher)
-def stop_database():
-    if db_process is not None:
-        print("Shutting down started database...")
-        subprocess.Popen.kill(db_process)
+#def stop_database():
+#    if db_process is not None:
+#        print("Shutting down started database...")
+#        subprocess.Popen.kill(db_process)
 
 #TODO: botness average
 #def create_person_document(twitter_data,wikidata_data):
@@ -430,6 +431,9 @@ def collect_twitter_user(t_handle, t_client):
         except tweepy.errors.TwitterServerError as t_servErr:
             print("Twitter unavailable: " + str(t_servErr) + ", Waiting...")
             sleep_interruptible(15 * 60)
+        except requests.exceptions.ConnectionError as r_connErr:
+            print("Twitter closed connection: " + str(r_connErr) + ", Waiting...")
+            sleep_interruptible(15 * 60)
 
         if config.stop_collection:
             return None
@@ -462,6 +466,8 @@ def store_person(wikidata_data, twitter_data):
         print("Creating new Person in database...")
 
     doc._key = wikidata_data["id"]
+    
+    doc["name"] = wikidata_data["name"] if "name" in wikidata_data else wikidata_data["id"]
 
     doc["twitter_object"] = twitter_data
     doc["wikidata_object"] = wikidata_data
@@ -658,6 +664,9 @@ def store_tweet(t_client, tweet_json, sentiment_value=None, avg_botness=None, av
                     except tweepy.errors.TwitterServerError as servErr:
                         print("Twitter unavailable: " + str(servErr) + ", Waiting...")
                         sleep_interruptible(15 * 60)
+                    except requests.exceptions.ConnectionError as r_connErr:
+                        print("Twitter closed connection: " + str(r_connErr) + ", Waiting...")
+                        sleep_interruptible(15 * 60)
 
                     if config.stop_collection:
                         return
@@ -690,30 +699,57 @@ def store_tweet(t_client, tweet_json, sentiment_value=None, avg_botness=None, av
                                   avg_botness, avg_maliciousness, ref_tweet=None)
 
 
-def create_like_document(liked_user_id, liking_user_id, tweet_id, tweet_created_at):
+def create_like_document(liked_user_id, liking_user_id, tweet_json, tweet_created_at):
     collection = db_connection["TwitterWatcher"]["Likes"]
     try:
-        collection.fetchDocument(tweet_id + "_liked_" + liking_user_id + "_" + liked_user_id)
+        collection.fetchDocument(tweet_json["id"] + "_liked_" + liking_user_id + "_" + liked_user_id)
         print("Like already exists in database, skipping...")
     except pyArangoExceptions.DocumentNotFoundError:
         doc = collection.createDocument()
-        doc._key = tweet_id + "_liked_" + liking_user_id + "_" + liked_user_id
+        doc._key = tweet_json["id"] + "_liked_" + liking_user_id + "_" + liked_user_id
         doc._from = "People/" + liking_user_id
         doc._to = "People/" + liked_user_id
 
-        doc["tweet_id"] = tweet_id
+        doc["twitter_object"] = {}
+
+        doc["twitter_object"]["tweet_id"] = tweet_json["id"]
+        doc["twitter_object"]["text"] = tweet_json["text"]
+        doc["point_in_time"] = tweet_json["created_at"]
+        doc["twitter_object"]["author_id"] = tweet_json["author_id"]
+        doc["twitter_object"]["edit_history_tweet_ids"] = tweet_json["edit_history_tweet_ids"]
+        if tweet_json.get("geo") is not None:
+            doc["twitter_object"]["geo"] = {}
+            doc["twitter_object"]["geo"]["place_id"] = tweet_json["geo"]["place_id"]
+
+        # if tweet_json.get("entities") is not None:  # Check if there even are hashtags/urls in the text
+        #    if tweet_json["entities"].get("urls") is not None:
+        #        doc["urls"] = tweet_json["entities"]["urls"]
+        #    if tweet_json["entities"].get("hashtags") is not None:
+        #        doc["hashtags"] = tweet_json["entities"]["hashtags"]
+        if tweet_json.get("withheld") is not None:
+            doc["twitter_object"]["withheld"] = {}
+            if tweet_json["withheld"].get("country_codes") is not None:
+                doc["twitter_object"]["withheld"]["country_codes"] = tweet_json["withheld"]["country_codes"]
+            if tweet_json["withheld"].get("scope") is not None:
+                doc["twitter_object"]["withheld"]["scope"] = tweet_json["withheld"]["scope"]
+
+        doc["twitter_object"]["public_metrics"] = tweet_json["public_metrics"]
+        doc["twitter_object"]["possibly_sensitive"] = tweet_json["possibly_sensitive"]
+        doc["twitter_object"]["lang"] = tweet_json["lang"]
+
         doc["point_in_time"] = tweet_created_at
+        doc["sentiment_value"] = 0.5
         doc["weight"] = 0.5
 
         doc.save()
 
 
 # Store edges for people liking others and dump a list of all collected liking users into corresponding tweet doc
-def store_likes(t_id, liking_users_in_db, tweet_id, tweet_created_at):
+def store_likes(t_id, liking_users_in_db, tweet_json, tweet_created_at):
     liked_user_id = get_id_by_tid_from_database(t_id)
     if liked_user_id is not None:  # TODO: Delete, should not be necessary since tweet author should always exist in db
         for liking_user_id in liking_users_in_db:
-            create_like_document(liked_user_id, liking_user_id, tweet_id, tweet_created_at)
+            create_like_document(liked_user_id, liking_user_id, tweet_json, tweet_created_at)
     else:
         print("Can't store likes for unknown user")
 
@@ -742,7 +778,7 @@ def collect_liking_users(tweet_id, t_client, page_limit=sys.maxsize):
                 t_response = t_client.get_liking_users(tweet_id,
                                                        max_results=100,
                                                        pagination_token=pagination_token)
-                time.sleep(.01)
+                time.sleep(.018)
                 #print(t_response)
                 if t_response.meta.get("next_token") is None:
                     all_results_found = True
@@ -762,6 +798,9 @@ def collect_liking_users(tweet_id, t_client, page_limit=sys.maxsize):
             except tweepy.errors.TwitterServerError as t_servErr:
                 print("Twitter unavailable: " + str(t_servErr) + ", Waiting...")
                 sleep_interruptible(15*60)
+            except requests.exceptions.ConnectionError as r_connErr:
+                print("Twitter closed connection: " + str(r_connErr) + ", Waiting...")
+                sleep_interruptible(15*60)
 
             if config.stop_collection:
                 savepoint.like_pagination = (i, pagination_token)
@@ -778,7 +817,7 @@ def get_tweet_sentiment_value(tweet_json):
     analyzer = SentimentIntensityAnalyzer()
     if is_not_retweet(tweet_json):  # Retweets dont have own text
         tweet_text = tweet_json["text"]
-        if tweet_json.get("in_reply_to_user_id") is not None:  # Replies have many mentions at the beginning that are not from the actual text, remove them
+        if "in_reply_to_user_id" in tweet_json:  # Replies have many mentions at the beginning that are not from the actual text, remove them
             tweet_text = re.sub("(@[^ ]* )+", "", tweet_text)
         tweet_text = re.sub("https://[^ ]+", "", tweet_text)  # Remove links
         if tweet_json["lang"] != "en":  # Translate non-english text
@@ -817,7 +856,7 @@ def get_tweet_sentiment_value(tweet_json):
         if tweet_json["lang"] != "en" and response_json["responseStatus"] == "403":
             print("TRANSLATION FAILED. Likely invalid language: " + str(tweet_json["lang"]))
         else:
-            print("TRANSLATION:" + tweet_text)
+            #print("TRANSLATION:" + tweet_text)
             sentiment_values = analyzer.polarity_scores(tweet_text)
 
         return sentiment_values["compound"]
@@ -924,6 +963,9 @@ def get_responding_users(tweet_data, t_client):
         except tweepy.errors.TwitterServerError as servErr:
             print("Twitter unavailable: " + str(servErr) + ", Waiting...")
             sleep_interruptible(15*60)
+        except requests.exceptions.ConnectionError as r_connErr:
+            print("Twitter closed connection: " + str(r_connErr) + ", Waiting...")
+            sleep_interruptible(15 * 60)
 
         if config.stop_collection:
             return None
@@ -937,7 +979,7 @@ def get_responding_users(tweet_data, t_client):
 
 
 def is_not_retweet(tweet_json):
-    if tweet_json.get("referenced_tweets") is None or tweet_json["referenced_tweets"][0]["type"] != "retweeted":
+    if ("referenced_tweets" not in tweet_json) or tweet_json["referenced_tweets"][0]["type"] != "retweeted":
         return True
     else:
         return False
@@ -999,6 +1041,9 @@ def collect_tweets_by_query(person, t_query, t_client, start_date, end_date, cat
             except tweepy.errors.TwitterServerError as t_servErr:
                 print("Twitter unavailable: " + str(t_servErr) + ", Waiting...")
                 sleep_interruptible(15*60)
+            except requests.exceptions.ConnectionError as r_connErr:
+                print("Twitter closed connection: " + str(r_connErr) + ", Waiting...")
+                sleep_interruptible(15*60)
 
             if config.stop_collection:
                 if not catch_up:
@@ -1059,7 +1104,7 @@ def collect_tweets_by_query(person, t_query, t_client, start_date, end_date, cat
         if is_not_retweet(tweets[index]):  # Retweets can't be liked
             print("Getting likes")
             liking_users_in_db, tweet_liking_users = collect_liking_users(tweets[index]["id"], t_client, page_limit=1)
-            store_likes(tweets[index]["author_id"], liking_users_in_db, tweets[index]["id"], tweets[index]["created_at"])
+            store_likes(tweets[index]["author_id"], liking_users_in_db, tweets[index], tweets[index]["created_at"])
 
         if config.stop_collection:
             if not catch_up:
@@ -1201,7 +1246,7 @@ def catch_up_new_people(new_people):
                     create_tweet_edge("mentioned", tweet_json, tweet_json["author_id"], person_t_id, sentiment_value,
                                       avg_botness, avg_maliciousness)
                 if tweet_doc["liking_users"] is not None and person_t_id in tweet_doc["liking_users"]:
-                    create_like_document(tweet_json["author_id"], person_t_id, tweet_id, tweet_doc["tweet"]["created_at"])
+                    create_like_document(tweet_json["author_id"], person_t_id, tweet_json, tweet_doc["tweet"]["created_at"])
 
             if config.stop_collection:
                 return
@@ -1666,15 +1711,17 @@ def collection(use_savepoint=False):
             if current_end_date.date() > datetime.today().date():
                 current_end_date = datetime.today()
 
-        # Stop collection when we reach the end date, if it exists
-        if config.end_date is not None and current_start_date.date() >= current_end_date.date():
+        # Stop collection when we reach the end date, if it exists. If no time steps exist, also stop since we only run through tweet collection once
+        if config.TimeSteps.NO_STEPS or (config.end_date is not None and current_start_date.date() >= current_end_date.date()):
             print("Reached end date, stopping collection...")
             end_date_reached = True
 
     calculate_bot_averages()
     config.status = config.WatcherStatus.COLLECTION_FINISHED
+    sleep_interruptible(2) # Sleep a few seconds so that the status can still be fetched?
+    config.collection_running = False
 
-    stop_database() #TODO: Do this on the website not here
+    #stop_database() #TODO: Do this on the website not here
 
 
 def export_to_graph_ml(involved_nodes=None, start_date=None, end_date=None, edge_kinds=None, include_node_info=True, include_edge_info=False, include_edge_weights=False):
